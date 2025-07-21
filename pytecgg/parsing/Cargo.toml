@@ -1,7 +1,11 @@
 [package]
-name = "pytecggrs"
+name = "pytecgg_parsing"
 version = "0.1.0"
 edition = "2021"
+
+[lib]
+name = "parsing"
+crate-type = ["cdylib"]
 
 [dependencies]
 rinex = "0.19"

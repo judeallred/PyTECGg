@@ -26,9 +26,6 @@ python_files = "test_*.py"
 python_functions = "test_*"
 addopts = "-v --cov=pytecgg --cov-report=term-missing"
 
-[tool.coverage.run]
-omit = ["pytecgg/rinex.py"]
-
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
