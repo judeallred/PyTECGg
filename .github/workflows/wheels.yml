@@ -11,8 +11,34 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ["3.11", "3.12", "3.13"]
+        include:
+          - os: ubuntu-latest
+            python: "3.11"
+            cp: "cp311"
+          - os: ubuntu-latest
+            python: "3.12"
+            cp: "cp312"
+          - os: ubuntu-latest
+            python: "3.13"
+            cp: "cp313"
+          - os: windows-latest
+            python: "3.11"
+            cp: "cp311"
+          - os: windows-latest
+            python: "3.12"
+            cp: "cp312"
+          - os: windows-latest
+            python: "3.13"
+            cp: "cp313"
+          - os: macos-latest
+            python: "3.11"
+            cp: "cp311"
+          - os: macos-latest
+            python: "3.12"
+            cp: "cp312"
+          - os: macos-latest
+            python: "3.13"
+            cp: "cp313"
 
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +46,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.0.1
         env:
-          CIBW_BUILD: cp${{ matrix.python | replace('.', '') }}-*
+          CIBW_BUILD: ${{ matrix.cp }}-*
           CIBW_SKIP: "*-musllinux*"
         with:
           output-dir: wheelhouse
