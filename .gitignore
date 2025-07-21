@@ -4,17 +4,10 @@ __pycache__/
 *$py.class
 
 # Distribution / packaging
-.Python
 build/
 dist/
-downloads/
-lib/
-lib64/
-var/
 wheels/
-share/python-wheels/
-.installed.cfg
-pytecgg/**/target/
+target/
 
 # Environments
 .env
