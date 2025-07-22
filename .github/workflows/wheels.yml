@@ -30,15 +30,15 @@ jobs:
           - os: windows-latest
             python: "3.13"
             cp: "cp313"
-          - os: macos-latest
-            python: "3.11"
-            cp: "cp311"
-          - os: macos-latest
-            python: "3.12"
-            cp: "cp312"
-          - os: macos-latest
-            python: "3.13"
-            cp: "cp313"
+          # - os: macos-latest
+          #   python: "3.11"
+          #   cp: "cp311"
+          # - os: macos-latest
+          #   python: "3.12"
+          #   cp: "cp312"
+          # - os: macos-latest
+          #   python: "3.13"
+          #   cp: "cp313"
 
     steps:
       - uses: actions/checkout@v4
