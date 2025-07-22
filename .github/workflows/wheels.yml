@@ -15,21 +15,21 @@ jobs:
           - os: ubuntu-latest
             python: "3.11"
             cp: "cp311"
-          - os: ubuntu-latest
-            python: "3.12"
-            cp: "cp312"
-          - os: ubuntu-latest
-            python: "3.13"
-            cp: "cp313"
-          - os: windows-latest
-            python: "3.11"
-            cp: "cp311"
-          - os: windows-latest
-            python: "3.12"
-            cp: "cp312"
-          - os: windows-latest
-            python: "3.13"
-            cp: "cp313"
+          # - os: ubuntu-latest
+          #   python: "3.12"
+          #   cp: "cp312"
+          # - os: ubuntu-latest
+          #   python: "3.13"
+          #   cp: "cp313"
+          # - os: windows-latest
+          #   python: "3.11"
+          #   cp: "cp311"
+          # - os: windows-latest
+          #   python: "3.12"
+          #   cp: "cp312"
+          # - os: windows-latest
+          #   python: "3.13"
+          #   cp: "cp313"
           # - os: macos-latest
           #   python: "3.11"
           #   cp: "cp311"
