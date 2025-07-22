@@ -1,11 +1,16 @@
 [package]
-name = "pytecgg_parsing"
+name = "pytecgg"
 version = "0.1.0"
 edition = "2021"
-exclude = [ "rinex/*", "tests/*", "images/*", ".github/*" ]
+exclude = [
+  "rinex/*", 
+  "tests/*", 
+  "images/*", 
+  ".github/*"
+]
 
 [lib]
-name = "parsing"
+name = "pytecgg"
 crate-type = ["cdylib"]
 
 [dependencies]

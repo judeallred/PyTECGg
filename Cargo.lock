@@ -2152,7 +2152,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pytecgg_parsing"
+name = "pytecgg"
 version = "0.1.0"
 dependencies = [
  "polars",
