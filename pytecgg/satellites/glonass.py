@@ -35,7 +35,7 @@ def glonass_derivatives(t, state, const, ae):
 def get_gmst(ymd: list) -> float:
     """Compute Greenwich Mean Sidereal Time (simplified version)
 
-    Args:
+    Parameters:
         ymd: [year, month, day] list
 
     Returns:
@@ -67,7 +67,7 @@ def glonass_satellite_coordinates(
     Compute GLONASS satellite position from ephemeris data only,
     propagating motion for a given number of seconds from ephemeris time.
 
-    Args:
+    Parameters:
         ephem_dict: Dictionary containing ephemeris data
         sv_id: Satellite identifier (e.g., 'R01')
         delta_seconds: Time in seconds to integrate from eph_time (can be negative)

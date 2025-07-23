@@ -1,4 +1,4 @@
-from pytecggrs import read_rinex_obs
+from pytecgg.parsing import read_rinex_obs
 from polars import DataFrame
 import pytest
 

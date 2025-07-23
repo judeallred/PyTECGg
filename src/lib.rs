@@ -5,7 +5,18 @@ use pyo3_polars::PyDataFrame;
 use std::path::Path;
 use std::collections::{BTreeSet, BTreeMap};
 
+/// Parses a RINEX observation file and returns the extracted observation data as a DataFrame
+///
+/// Parameters:
+///     path (str): Path to the RINEX observation file
+///
+/// Returns:
+///     tuple:
+///         - PyDataFrame: A DataFrame with columns 'epoch', 'sv', 'observable', 'value'
+///         - tuple[float, float, float]: Receiver's position in ECEF coordinates (in meters)
+///         - str: RINEX version
 #[pyfunction]
+#[pyo3(text_signature = "(path, /)")]
 fn read_rinex_obs(path: &str) -> PyResult<(PyDataFrame, (f64, f64, f64), String)> {
     let path = Path::new(path);
     
@@ -68,7 +79,17 @@ fn read_rinex_obs(path: &str) -> PyResult<(PyDataFrame, (f64, f64, f64), String)
     Ok((PyDataFrame(df), (x, y, z), version))
 }
 
+/// Parses a RINEX navigation file and returns a dictionary of DataFrames,
+/// one per GNSS constellation
+///
+/// Parameters:
+///     path (str): Path to the RINEX navigation file
+///
+/// Returns:
+///     dict[str, PyDataFrame]: A dictionary where keys are GNSS constellation names
+///     (e.g., "GPS", "Galileo") and values are DataFrames containing navigation parameters
 #[pyfunction]
+#[pyo3(text_signature = "(path, /)")]
 fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
     let rinex = Rinex::from_file(Path::new(path))
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("RINEX error: {}", e)))?;
@@ -79,7 +100,7 @@ fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
         ));
     }
 
-    // Mappa per costellazione -> DataFrame
+    // Map from constellation names to their data
     let mut constellation_data: BTreeMap<String, Vec<BTreeMap<String, f64>>> = BTreeMap::new();
     let mut constellation_times: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut constellation_svs: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -99,20 +120,20 @@ fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
         let sv_id = nav_key.sv.prn.to_string();
         let epoch_str = nav_key.epoch.to_string();
 
-        // Crea una mappa per tutti i parametri
+        // Create a map for the parameters
         let mut params = BTreeMap::new();
 
-        // Aggiungi parametri di clock
+        // Add clock parameters
         params.insert("clock_bias".to_string(), ephemeris.clock_bias);
         params.insert("clock_drift".to_string(), ephemeris.clock_drift);
         params.insert("clock_drift_rate".to_string(), ephemeris.clock_drift_rate);
 
-        // Aggiungi tutti i parametri orbitali disponibili
+        // Add all available orbital parameters
         for (key, value) in &ephemeris.orbits {
             params.insert(key.to_string(), value.as_f64());
         }
 
-        // Inizializza le strutture dati per questa costellazione se non esistono
+        // Initialise data structures for the constellation if not already present
         constellation_data.entry(constellation.clone())
             .or_insert_with(Vec::new)
             .push(params);
@@ -124,14 +145,14 @@ fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
             .push(sv_id);
     }
 
-    // Crea i DataFrame per ogni costellazione
+    // Create DataFrames for each constellation
     let mut result = BTreeMap::new();
     
     for (constellation, data) in constellation_data {
         let times = &constellation_times[&constellation];
         let svs = &constellation_svs[&constellation];
         
-        // Raccogli tutti i nomi dei parametri univoci
+        // Collect all unique parameter names across
         let mut all_params = BTreeSet::new();
         for params in &data {
             for param_name in params.keys() {
@@ -139,13 +160,13 @@ fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
             }
         }
 
-        // Crea una serie per ogni parametro
+        // Crea a serries for each parameter
         let mut series_map: BTreeMap<String, Vec<Option<f64>>> = BTreeMap::new();
         for param in &all_params {
             series_map.insert(param.clone(), Vec::new());
         }
 
-        // Popola le serie
+        // Populate the series
         for params in &data {
             for param in &all_params {
                 let value = params.get(param).copied();
@@ -153,13 +174,13 @@ fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
             }
         }
 
-        // Crea il DataFrame
+        // Create the DataFrame
         let mut df_builder = df! {
             "epoch" => times,
             "sv" => svs,
         }.map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
-        // Aggiungi tutte le colonne dei parametri
+        // Add all parameters as columns
         for (param_name, values) in series_map {
             let mut series: Series = values.into_iter()
                 .map(|opt| opt.map(|v| v as f64))
@@ -170,7 +191,7 @@ fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
         }
 
-        // Imposta l'indice multi-livello (epoch, sv)
+        // Set the multi-index with (epoch, sv)
         df_builder = df_builder
             .lazy()
             .with_row_index("row_id", None)
@@ -184,7 +205,7 @@ fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
 }
 
 #[pymodule]
-fn pytecggrs(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn pytecgg(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(read_rinex_obs, m)?)?;
     m.add_function(wrap_pyfunction!(read_rinex_nav, m)?)?;
     Ok(())

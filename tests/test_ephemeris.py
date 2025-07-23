@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import polars as pl
 
-from pytecggrs import read_rinex_nav
+from pytecgg.parsing import read_rinex_nav
 from pytecgg.satellites.ephemeris import _parse_time, prepare_ephemeris
 
 

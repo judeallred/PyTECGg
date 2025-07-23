@@ -19,6 +19,7 @@ maturin = "^1.8.7"
 pytest = "^8.4.1"
 pytest-cov = "^6.0.0"
 jupyter = "^1.1.1"
+twine = "^6.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -26,9 +27,9 @@ python_files = "test_*.py"
 python_functions = "test_*"
 addopts = "-v --cov=pytecgg --cov-report=term-missing"
 
-[tool.coverage.run]
-omit = ["pytecgg/rinex.py"]
+[tool.maturin]
+module-name = "pytecgg"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["maturin>=1.8"]
+build-backend = "maturin"

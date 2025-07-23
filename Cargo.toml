@@ -1,7 +1,17 @@
 [package]
-name = "pytecggrs"
+name = "pytecgg"
 version = "0.1.0"
 edition = "2021"
+exclude = [
+  "rinex/*", 
+  "tests/*", 
+  "images/*", 
+  ".github/*"
+]
+
+[lib]
+name = "pytecgg"
+crate-type = ["cdylib"]
 
 [dependencies]
 rinex = "0.19"

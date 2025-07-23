@@ -10,7 +10,7 @@ def _calculate_gflc_phase(
     """
     Calculate the geometry-free linear combination (GFLC) from two phase observations
 
-    Args:
+    Parameters:
         phase1 (pl.Expr): Phase observation for frequency 1
         phase2 (pl.Expr): Phase observation for frequency 2
         freq1 (pl.Expr): Frequency 1 in Hz
@@ -30,7 +30,7 @@ def _calculate_gflc_code(
     """
     Calculate the geometry-free linear combination (GFLC) from two code observations
 
-    Args:
+    Parameters:
         code1 (pl.Expr): Code observation for frequency 1
         code2 (pl.Expr): Code observation for frequency 2
         freq1 (pl.Expr): Frequency 1 in Hz
@@ -49,7 +49,7 @@ def process_observations(
 ) -> pl.DataFrame:
     """
     Process observations for a specific GNSS system to calculate GFLC
-    Args:
+    Parameters:
         obs_data (pl.DataFrame): DataFrame containing observation data
         system (Literal["G", "E", "C", "R"]): GNSS system identifier
         glonass_freq (Optional[dict[str, int]]): Frequency mapping for GLONASS, required if system is "R"
