@@ -33,3 +33,25 @@ module-name = "pytecgg"
 [build-system]
 requires = ["maturin>=1.8"]
 build-backend = "maturin"
+
+[project]
+name = "pytecgg"
+version = "0.1.0"
+description = "Total Electron Content (TEC) reconstruction with GNSS data – a Python package with a Rust core"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Vincenzo Ventriglia", email = "vincenzo.ventriglia@outlook.com" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
+]
+dependencies = [
+    "polars >=1.20.0",
+    "numpy >=2.0.0",
+    "scipy >=1.15",
+    "pymap3d >=3.2",
+    "tzdata >=2025.2"
+]
