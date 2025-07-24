@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, Optional
+from typing import Tuple
 from pymap3d import ecef2geodetic, ecef2aer
 
 from . import RE
@@ -8,32 +8,33 @@ from . import RE
 def calculate_ipp(
     rec_ecef: Tuple[float, float, float],
     sat_ecef_array: np.ndarray,
-    h_ipp: float,
-    rec_geodetic: Optional[Tuple[float, float, float]] = None,
+    h_ipp: float = 350_000,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Calculate the Ionospheric Pierce Point (IPP) location; it allows pre-computation
-    of receiver geodetic coordinates to avoid redundant calculations
+    Calculate the Ionospheric Pierce Point (IPP) location.
 
     Parameters:
     - rec_ecef: Receiver ECEF coordinates (x, y, z) in meters
-    - sat_ecef_array: Satellite ECEF coordinates (x, y, z) in meters
-    - h_ipp: Mean height of the ionosphere shell in meters
-    - rec_geodetic: Optional pre-computed receiver geodetic coordinates (lat, lon, alt) in degrees/meters
+    - sat_ecef_array: (N,3) array of satellite ECEF coordinates in meters
+    - h_ipp: Mean height of the ionosphere shell in meters, default is 350.000 meters
 
     Returns:
-    - lat_ipp, lon_ipp, azi, ele: (N,) NumPy array with:
+    - Tuple of (N,) NumPy arrays containing:
         - lat: Latitude of IPP in degrees (None, if calculation fails)
         - lon: Longitude of IPP in degrees (None, if calculation fails)
         - azi: Azimuth angle from receiver to satellite in degrees (None, if calculation fails)
         - ele: Elevation angle from receiver to satellite in degrees (None, if calculation fails)
     """
-    xA, yA, zA = rec_ecef
+    if h_ipp < 0:
+        raise ValueError("h_ipp must be non-negative")
+
+    if sat_ecef_array.size == 0:
+        return np.array([]), np.array([]), np.array([]), np.array([])
+
+    xA, yA, zA = map(np.asarray, rec_ecef)
     xB, yB, zB = sat_ecef_array[:, 0], sat_ecef_array[:, 1], sat_ecef_array[:, 2]
 
-    dx = xB - xA
-    dy = yB - yA
-    dz = zB - zA
+    dx, dy, dz = xB - xA, yB - yA, zB - zA
 
     a = dx**2 + dy**2 + dz**2
     b = 2 * (dx * xA + dy * yA + dz * zA)
@@ -43,11 +44,13 @@ def calculate_ipp(
     mask = disc >= 0
 
     # Init arrays with NaN
-    lat_ipp = np.full_like(xB, np.nan, dtype=float)
-    lon_ipp = np.full_like(xB, np.nan, dtype=float)
-    azi = np.full_like(xB, np.nan, dtype=float)
-    ele = np.full_like(xB, np.nan, dtype=float)
+    size_ = sat_ecef_array.shape[0]
+    lat_ipp = np.full(size_, np.nan, dtype=float)
+    lon_ipp = np.full(size_, np.nan, dtype=float)
+    azi = np.full(size_, np.nan, dtype=float)
+    ele = np.full(size_, np.nan, dtype=float)
 
+    # If no valid solutions, return NaNs
     if not np.any(mask):
         return lat_ipp, lon_ipp, azi, ele
 
@@ -62,38 +65,33 @@ def calculate_ipp(
     t1_valid = (0 <= t1) & (t1 <= 1)
     t2_valid = (0 <= t2) & (t2 <= 1)
 
-    t = np.where(
-        t1_valid & t2_valid,
-        np.minimum(t1, t2),
-        np.where(t1_valid, t1, np.where(t2_valid, t2, np.nan)),
+    t = np.select(
+        [t1_valid & t2_valid, t1_valid, t2_valid],
+        [np.minimum(t1, t2), t1, t2],
+        default=np.nan,
     )
 
     valid = ~np.isnan(t)
+    if not np.any(valid):
+        return lat_ipp, lon_ipp, azi, ele
 
-    dxv, dyv, dzv = dx[mask][valid], dy[mask][valid], dz[mask][valid]
-    tv = t[valid]
-
-    x_ipp = xA + dxv * tv
-    y_ipp = yA + dyv * tv
-    z_ipp = zA + dzv * tv
-
-    # Geodetic coordinates of IPP
-    latv, lonv, _ = ecef2geodetic(x_ipp, y_ipp, z_ipp)
-
-    # Azimuth and elevation angles for valid IPP points
+    # Compute IPP coordinates
     idx_out = np.flatnonzero(mask)[valid]
+    x_ipp = xA + dx[mask][valid] * t[valid]
+    y_ipp = yA + dy[mask][valid] * t[valid]
+    z_ipp = zA + dz[mask][valid] * t[valid]
+
+    # Convert to geodetic coordinates
+    latv, lonv, _ = ecef2geodetic(x_ipp, y_ipp, z_ipp)
     lat_ipp[idx_out] = latv
     lon_ipp[idx_out] = lonv
 
-    if rec_geodetic is None and rec_ecef is not None:
-        # Compute receiver geodetic coordinates, if not provided, but ECEF is available
-        rec_geodetic = ecef2geodetic(*rec_ecef)
-
-    if rec_geodetic is not None and len(idx_out) > 0:
-        aziv, elev, _ = ecef2aer(
-            xB[mask][valid], yB[mask][valid], zB[mask][valid], *rec_geodetic, deg=True
-        )
-        azi[idx_out] = aziv
-        ele[idx_out] = elev
+    # Compute azimuth and elevation
+    rec_geodetic = ecef2geodetic(*rec_ecef)
+    aziv, elev, _ = ecef2aer(
+        xB[mask][valid], yB[mask][valid], zB[mask][valid], *rec_geodetic, deg=True
+    )
+    azi[idx_out] = aziv
+    ele[idx_out] = elev
 
     return lat_ipp, lon_ipp, azi, ele
