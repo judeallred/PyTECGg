@@ -14,8 +14,8 @@ FREQ_BANDS: dict[str, dict] = {
 }
 
 OBS_MAPPING: dict[str, dict] = {
-    "G": {"phase": {"L1": "L1C", "L2": "L2W"}},
-    "R": {"phase": {"L1": "L1C", "L2": "L2C"}},
-    "E": {"phase": {"L1": "L1X", "L5": "L5X"}},
-    "C": {"phase": {"L1": "L1X", "L5": "L5X"}},
+    "G": {"phase": {"L1": "L1C", "L2": "L2W"}, "code": {"C1": "C1C", "C2": "C2W"}},
+    "R": {"phase": {"L1": "L1C", "L2": "L2C"}, "code": {"C1": "C1C", "C2": "C2C"}},
+    "E": {"phase": {"L1": "L1X", "L5": "L5X"}, "code": {"C1": "C1X", "C5": "C5X"}},
+    "C": {"phase": {"L1": "L1X", "L5": "L5X"}, "code": {"C1": "C1X", "C5": "C5X"}},
 }
