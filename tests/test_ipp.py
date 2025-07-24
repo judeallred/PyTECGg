@@ -10,7 +10,7 @@ def test_visible_satellite():
     sat_pos = np.array([[-11177306.3509, 23710565.8502, 3758426.0384]])  # GPS satellite
     h_ipp = 350_000
 
-    lat, lon, azi, ele = calculate_ipp(rec_pos, sat_pos, h_ipp, rec_geodetic=None)
+    lat, lon, azi, ele = calculate_ipp(rec_pos, sat_pos, h_ipp)
 
     assert np.isfinite(lat[0])
     assert -90 <= lat[0] <= 90
