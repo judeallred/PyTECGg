@@ -17,7 +17,7 @@ def calculate_ipp(
 
     Parameters:
     - rec_ecef: Receiver ECEF coordinates (x, y, z) in meters
-    - sat_ecef: Satellite ECEF coordinates (x, y, z) in meters
+    - sat_ecef_array: Satellite ECEF coordinates (x, y, z) in meters
     - h_ipp: Mean height of the ionosphere shell in meters
     - rec_geodetic: Optional pre-computed receiver geodetic coordinates (lat, lon, alt) in degrees/meters
 
