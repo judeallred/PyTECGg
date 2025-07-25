@@ -1,5 +1,5 @@
 import numpy as np
-from pytecgg.linear_combinations.ipp import calculate_ipp
+from pytecgg.satellites.ipp import calculate_ipp
 
 
 def test_visible_satellite():

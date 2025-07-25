@@ -251,3 +251,6 @@ GNSS_CONSTANTS: dict[str, GNSSConstants] = {
 }
 
 TOL_KEPLER = 0.001
+
+# Earth radius in meters
+RE: float = 6371000.0

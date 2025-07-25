@@ -1,5 +1,3 @@
-# Earth radius in meters
-RE: float = 6371000.0
 # Speed of light in m/s
 C: float = 299792458.0
 
