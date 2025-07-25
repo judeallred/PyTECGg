@@ -39,7 +39,7 @@ def _calculate_gflc_code(
         pl.Expr: Expression for the calculated GFLC
     """
     pr_to_tec = (1 / 40.308) * (freq1**2 * freq2**2) / (freq1**2 - freq2**2) / 1e16
-    return (code1 - code2) * pr_to_tec
+    return (code2 - code1) * pr_to_tec
 
 
 def calculate_gflc(
