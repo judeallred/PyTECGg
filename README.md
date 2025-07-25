@@ -1,6 +1,6 @@
 # PyTECGg
 
-<!-- Add PyPi version when published -->
+[![PyPI version](https://img.shields.io/pypi/v/pytecgg.svg)](https://pypi.org/project/pytecgg/)
 ![Python version](https://img.shields.io/badge/python-3.11--3.13-blue.svg)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
 ![Tests](https://github.com/viventriglia/PyTECGg/actions/workflows/pytest.yml/badge.svg)
@@ -49,17 +49,13 @@ This will also install all required Python dependencies automatically.
 
 ### 🛠️ From source distribution
 
-If you prefer to install from the source distribution (e.g. for development or inspection), pip will compile the Rust core locally. In that case, a working Rust toolchain is required:
+If you prefer to install from the source distribution (e.g. for development or inspection), pip will compile the Rust core locally.
 
 ```shell
-# Option 1 – let pip build from source
 pip install pytecgg --no-binary :all:
-
-# Option 2 – download the .tar.gz from PyPI and install manually
-pip install pytecgg-*.tar.gz
 ```
 
-> ℹ️ Note: Building from source requires a working Rust toolchain (rustc, cargo). You can install it via [rustup](https://rustup.rs/).
+> ℹ️ Note: building from source requires a working Rust toolchain (rustc, cargo). You can install it via [rustup](https://rustup.rs/).
 
 
 ## Example usage
@@ -76,31 +72,84 @@ nav_dict = read_rinex_nav("./path/to/your/nav_file.rnx")
 # - a DataFrame of observations,
 # - the receiver's approximate position in ECEF,
 # - the RINEX version string.
-obs_df, receiver_pos, version = read_rinex_obs("./path/to/your/obs_file.rnx")
+df_obs, rec_pos, version = read_rinex_obs("./path/to/your/obs_file.rnx")
 ```
 
-### Compute Satellite Coordinates 🛰️
+Timestamps in the epoch column are parsed as strings by default.
+To enable time-based filtering and computation, convert them to timezone-aware datetimes using Polars:
 
-To compute satellite positions, you need to filter and format the ephemerides for a specific GNSS constellation.
+```python
+import polars as pl
+
+df_obs = df_obs.with_columns(
+    pl.col("epoch")
+    .str.strptime(pl.Datetime, format="%Y-%m-%dT%H:%M:%S GPST", strict=False)
+    .dt.replace_time_zone("UTC")
+    .alias("epoch")
+)
+```
+
+### Compute Geometry-Free Linear Combinations (GFLC) 📡
+
+To compute GFLC for a given GNSS constellation, first filter and format the ephemerides, then pass the observation data to the GFLC computation function.
 
 ```python
 from pytecgg.satellites.ephemeris import prepare_ephemeris
-from pytecgg.satellites.positions import satellite_coordinates
+from pytecgg.linear_combinations.gflc import calculate_gflc
 
 # Prepare the ephemerides, e.g. for Galileo
 ephem_dict = prepare_ephemeris(nav_dict, constellation='Galileo')
 
-# Compute the ECEF coordinates, e.g. for satellite E25
-coords = satellite_coordinates(
-    ephem_dict=ephem_dict,
-    sv_id='E25',
-    gnss_system='Galileo'
+# Compute GFLC
+df_gflc = calculate_gflc(
+    df_obs,
+    system='E',
 )
 ```
 
-`ephem_dict` is a dictionary keyed by satellite ID, containing ephemeris parameters ready for coordinate computation.
+`ephem_dict` is a dictionary containing ephemeris parameters, keyed by satellite ID.
+The resulting `df_gflc` is a Polars DataFrame with one row per satellite and epoch, containing both the carrier-phase and code GFLCs.
 
-Currently supported `gnss_system` are `'Galileo', 'GPS', 'BeiDou', 'QZSS'`.
+### Satellite coordinates and Ionospheric Pierce Point (IPP) 🛰️
+
+To associate GFLCs with the satellite's position in space, we can compute ECEF coordinates for each satellite–epoch and add them as columns to the existing Polars DataFrame:
+
+```python
+from pytecgg.satellites.positions import satellite_coordinates
+
+df_gflc_pos = df_gflc.with_columns(
+    *satellite_coordinates(
+        sv_ids=df_gflc["sv"],
+        epochs=df_gflc["epoch"],
+        ephem_dict=ephem_dict,
+        gnss_system="Galileo",
+    )
+)
+```
+
+We can then compute the IPP — the intersection between the satellite–receiver line of sight and a thin-shell ionosphere at a fixed altitude:
+
+```python
+from pytecgg.satellites.ipp import calculate_ipp
+
+# Extract satellite positions as a NumPy array
+sat_ecef_array = df_gflc_pos.select(["sat_x", "sat_y", "sat_z"]).to_numpy()
+
+# Compute IPP latitude and longitude, azimuth and elevation angle from
+# receiver to satellite, assuming a fixed ionospheric shell height of 350 km
+lat_ipp, lon_ipp, azi, ele = calculate_ipp(
+    rec_pos,
+    sat_ecef_array,
+    h_ipp=350_000,
+)
+
+df_gflc_ipp = df_gflc_pos.with_columns([
+    pl.Series("lat_ipp", lat_ipp),
+    pl.Series("lon_ipp", lon_ipp),
+    pl.Series("azi", azi),
+    pl.Series("ele", ele)
+])
+```
 
 
 ## How can I help?

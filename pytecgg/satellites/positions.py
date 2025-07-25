@@ -4,37 +4,50 @@ import warnings
 import datetime
 
 import numpy as np
-
+import polars as pl
 
 from pytecgg.satellites.kepler import kepler
 from pytecgg.satellites import GNSS_CONSTANTS, TOL_KEPLER
 
 
-def _is_ephemeris_valid(data: dict, required_keys: dict) -> bool:
+def _is_ephemeris_valid(data: dict, sv_id: str, required_keys: dict) -> bool:
     """Check ephemeris validaty against required keys"""
     missing = [k for k in required_keys if k not in data or data[k] is None]
     if missing:
-        warnings.warn(f"Missing ephemeris parameters: {missing}", RuntimeWarning)
+        warnings.warn(
+            f"Satellite {sv_id} | Missing ephemeris parameters: {missing}",
+            RuntimeWarning,
+        )
         return False
     return True
 
 
-def _compute_time_elapsed(obs_time: datetime.datetime, toe: float) -> float:
+def _gps_to_datetime(time_week, time_s, leap_seconds=0):
+    gps_epoch = datetime.datetime(1980, 1, 6, tzinfo=datetime.timezone.utc)
+    return gps_epoch + datetime.timedelta(
+        weeks=time_week, seconds=time_s - leap_seconds
+    )
+
+
+def _compute_time_elapsed(
+    obs_time: datetime.datetime, gps_week: int, toe: int
+) -> float:
     """Compute the time elapsed since the ephemeris reference epoch (ToE)"""
     if not isinstance(obs_time, datetime.datetime):
         raise TypeError("Invalid datetime format in ephemeris data")
 
-    toe_dt = datetime.datetime.fromtimestamp(toe, datetime.timezone.utc)
+    toe_dt = _gps_to_datetime(
+        time_week=gps_week,
+        time_s=toe,
+    )
 
-    # Assicura che entrambi siano aware o naive
+    # Ensure both times are tz-aware
     if obs_time.tzinfo is not None and toe_dt.tzinfo is None:
         toe_dt = toe_dt.replace(tzinfo=datetime.timezone.utc)
     elif obs_time.tzinfo is None and toe_dt.tzinfo is not None:
         obs_time = obs_time.replace(tzinfo=datetime.timezone.utc)
 
-    tk = (obs_time - toe_dt).total_seconds()
-    # If time difference is negative (before toe), add 1 week (604800 seconds)
-    return tk + 604800 if tk < 0 else tk
+    return (obs_time - toe_dt).total_seconds()
 
 
 def _compute_anomalies(
@@ -81,24 +94,32 @@ def _apply_geo_correction(
     return Xk, Yk, Zk
 
 
-def satellite_coordinates(
+def _satellite_coordinates(
     ephem_dict: dict[str, dict[str, Any]],
     sv_id: str,
     gnss_system: Literal["GPS", "Galileo", "QZSS", "BeiDou"],
     obs_time: datetime.datetime | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> np.ndarray:
     """
-    Compute GNSS satellite position in ECEF coordinates using broadcast ephemeris.
+    Compute the Earth-Centered Earth-Fixed (ECEF) coordinates of a GNSS satellite
+    using broadcast ephemeris parameters
 
-    Parameters:
-    - ephem_dict: Dictionary containing ephemeris data
-    - sv_id: Satellite identifier (e.g., 'E23')
-    - gnss_system: GNSS constellation ('GPS', 'Galileo', 'QZSS' or 'BeiDou')
-    - obs_time: Optional observation time (datetime). If None, uses ephemeris timestamp
+    Parameters
+    ----------
+    ephem_dict : dict[str, dict[str, Any]]
+        Dictionary containing ephemeris data
+    sv_id : str
+        Satellite identifier (e.g., 'E23')
+    gnss_system : Literal["GPS", "Galileo", "QZSS", "BeiDou"]
+        GNSS constellation ('GPS', 'Galileo', 'QZSS' or 'BeiDou')
+    obs_time : datetime.datetime | None, optional
+        Optional observation time (datetime); if None, uses ephemeris timestamp
 
-    Returns:
-    - pos: [3] array of ECEF coordinates [X, Y, Z] (meters)
-    - aux: [8] array of auxiliary variables [tk, Mk, Ek, vk, uk, rk, ik, lamk]
+    Returns
+    -------
+    np.ndarray
+        A 3-element NumPy array with the satellite's ECEF position [X, Y, Z] in
+        meters; it returns an empty array if ephemeris data is invalid or incomplete
     """
     if gnss_system not in GNSS_CONSTANTS:
         raise ValueError(
@@ -132,8 +153,8 @@ def satellite_coordinates(
         raise KeyError(f"Satellite {sv_id} not found in ephemeris data")
 
     data = ephem_dict[sv_id]
-    if not _is_ephemeris_valid(data, REQUIRED_KEYS):
-        return np.array([]), np.array([])
+    if not _is_ephemeris_valid(data, sv_id, REQUIRED_KEYS):
+        return np.array([], dtype=float)
 
     computation_time = obs_time if obs_time is not None else data["datetime"]
 
@@ -141,7 +162,9 @@ def satellite_coordinates(
         # Core computations
         A = data["sqrta"] ** 2
         n0 = math.sqrt(gm / (A**3))
-        tk = _compute_time_elapsed(computation_time, data["toe"])
+        tk = _compute_time_elapsed(
+            computation_time, gps_week=data["gps_week"], toe=data["toe"]
+        )
 
         # Orbital parameters
         n = n0 + data["deltaN"]
@@ -183,12 +206,67 @@ def satellite_coordinates(
             if data["i0"] <= 20 * (math.pi / 180):
                 Xk, Yk, Zk = _apply_geo_correction(Xk, Yk, Zk, tk, we)
 
-        pos = np.array([Xk, Yk, Zk], dtype=float)
-        aux = np.array([tk, Mk, Ek, vk, uk, rk, ik, lamk], dtype=float)
-
-        return pos, aux
+        return np.array([Xk, Yk, Zk], dtype=float)
 
     except Exception as e:
         raise RuntimeError(
             f"{gnss_system} position computation failed for {sv_id}: {str(e)}"
         )
+
+
+def satellite_coordinates(
+    sv_ids: pl.Series,
+    epochs: pl.Series,
+    ephem_dict: dict[str, dict[str, Any]],
+    gnss_system: str,
+) -> list[pl.Expr]:
+    """
+    Compute GNSS satellite positions in Earth-Centered Earth-Fixed (ECEF) coordinates
+    for multiple epochs using broadcast ephemeris
+
+    Parameters:
+    ----------
+    sv_ids : pl.Series
+        Polars Series containing satellite identifiers (e.g., 'G12', 'E19') for each epoch
+    epochs : pl.Series
+        Polars Series of datetime values (in ns precision) corresponding to each satellite observation
+    ephem_dict : dict[str, dict[str, Any]]
+        Dictionary containing broadcast ephemeris parameters for each satellite
+    gnss_system : str
+        GNSS constellation ('GPS', 'Galileo', 'QZSS' or 'BeiDou')
+
+    Returns:
+    -------
+    list[pl.Expr]
+        A list of three Polars expressions representing the ECEF coordinates in meters
+    """
+    sv_arr = sv_ids.to_numpy()
+    time_arr = epochs.dt.cast_time_unit("ns").to_numpy()
+
+    size_ = sv_arr.shape[0]
+    x = np.full(size_, np.nan, dtype=float)
+    y = np.full(size_, np.nan, dtype=float)
+    z = np.full(size_, np.nan, dtype=float)
+
+    for i, (sv, epoch_ns) in enumerate(zip(sv_arr, time_arr)):
+        try:
+            if sv not in ephem_dict:
+                continue
+
+            epoch_dt = datetime.datetime.fromtimestamp(
+                epoch_ns.astype("int64") / 1e9, datetime.timezone.utc
+            )
+
+            pos = _satellite_coordinates(ephem_dict, sv, gnss_system, epoch_dt)
+            # print(pos)
+            if pos.size > 0:
+                x[i], y[i], z[i] = pos
+        except Exception as e:
+            print(f"Error processing {sv} at {epoch_dt}: {str(e)}")
+            continue
+
+    return [
+        pl.lit(x).alias("sat_x"),
+        pl.lit(y).alias("sat_y"),
+        pl.lit(z).alias("sat_z"),
+    ]
