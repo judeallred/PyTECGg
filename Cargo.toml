@@ -8,9 +8,8 @@ readme = "README.md"
 authors = ["Vincenzo Ventriglia <vincenzo.ventriglia@outlook.com>"]
 repository = "https://github.com/viventriglia/PyTECGg"
 exclude = [
-  "rinex/*", 
-  "tests/*", 
-  "images/*", 
+  "rinex/*",
+  "tests/*",
   ".github/*"
 ]
 
