@@ -28,8 +28,7 @@ jobs:
 
       - name: Install project dependencies
         run: poetry install
-        # run: poetry install --no-interaction --no-cache --no-lock
-
+        
       - name: Compile Rust crate with maturin
         run: poetry run maturin develop --release
 
