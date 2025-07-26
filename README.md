@@ -34,6 +34,9 @@ This package:
 | *Generated image of Earth's ionosphere with GNSS satellites studying TEC* |
 
 
+👉 [**Contributing to PyTECGg**](./CONTRIBUTING.md)
+
+
 ## Installation
 
 ### 📦 From PyPI (recommended)
