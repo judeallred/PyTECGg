@@ -14,6 +14,30 @@ def detect_cs_lol(
     threshold_abs: float = 5.0,
     max_gap: timedelta = timedelta(seconds=30),
 ) -> pl.DataFrame:
+    """
+    Detect cycle slip (CS) and loss-of-lock (LoL) in GNSS observations using
+    Melbourne-Wübbena combination
+
+    Parameters:
+        df (pl.DataFrame): DataFrame containing GNSS observation data with Melbourne-Wübbena values
+        system (Literal["G", "E", "C", "R"]): GNSS system identifier
+        threshold_std (float): Threshold in standard deviations for CS detection (default: 5.0)
+        threshold_abs (float): Absolute threshold in meters for CS detection (default: 5.0)
+        max_gap (timedelta): Maximum allowed time gap between observations before declaring
+            LoL (default: 30 seconds)
+
+    Returns:
+        pl.DataFrame: DataFrame with CS and LoL detections, containing:
+            - epoch: Observation timestamp
+            - sv: Satellite PRN number
+            - is_loss_of_lock: Boolean indicating LoL (or satellite setting)
+            - is_cycle_slip: Boolean indicating CS (None, when LoL occurs)
+
+    Notes:
+        This function implements a CS detection algorithm based on the Melbourne-Wübbena
+        combination, following the methodology described in:
+        ESA Navipedia (https://gssc.esa.int/navipedia/index.php?title=Detector_based_in_code_and_carrier_phase_data:_The_Melbourne-W%C3%BCbbena_combination)
+    """
     lambda_w = C / (FREQ_BANDS[system]["L1"] - FREQ_BANDS[system]["L2"])
     sigma_0 = lambda_w / 2
     result = []
@@ -47,7 +71,7 @@ def detect_cs_lol(
                 m_prev = None
                 continue
 
-            # Gap in the current epoch: loss of lock/sunset
+            # Gap in the current epoch: loss of lock/satellite setting
             is_loss_of_lock = False
             if last_valid_epoch is not None:
                 gap = epoch - last_valid_epoch
