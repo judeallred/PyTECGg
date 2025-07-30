@@ -20,7 +20,7 @@ pytest = "^8.4.1"
 pytest-cov = "^6.0.0"
 jupyter = "^1.1.1"
 twine = "^6.0"
-matplotlib = "^3.10"
+plotly = "^6.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
