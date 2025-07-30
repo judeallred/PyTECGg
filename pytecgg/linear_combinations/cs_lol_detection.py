@@ -7,12 +7,17 @@ import numpy as np
 from pytecgg.linear_combinations import FREQ_BANDS, C
 
 
+def _infer_temporal_resolution(df: pl.DataFrame) -> timedelta:
+    epochs = df.get_column("epoch")
+    return epochs.unique().sort().diff().drop_nulls().mode()[0]
+
+
 def detect_cs_lol(
     df: pl.DataFrame,
     system: Literal["G", "E", "C", "R"],
     threshold_std: float = 5.0,
     threshold_abs: float = 5.0,
-    max_gap: timedelta = timedelta(seconds=30),
+    max_gap: timedelta = None,
 ) -> pl.DataFrame:
     """
     Detect cycle slip (CS) and loss-of-lock (LoL) in GNSS observations using
@@ -24,7 +29,7 @@ def detect_cs_lol(
         threshold_std (float): Threshold in standard deviations for CS detection (default: 5.0)
         threshold_abs (float): Absolute threshold in meters for CS detection (default: 5.0)
         max_gap (timedelta): Maximum allowed time gap between observations before declaring
-            LoL (default: 30 seconds)
+            LoL (default: inferred from df's temporal resolution)
 
     Returns:
         pl.DataFrame: DataFrame with CS and LoL detections, containing:
@@ -40,6 +45,9 @@ def detect_cs_lol(
     """
     lambda_w = C / (FREQ_BANDS[system]["L1"] - FREQ_BANDS[system]["L2"])
     sigma_0 = lambda_w / 2
+    if max_gap is None:
+        max_gap = _infer_temporal_resolution(df)
+
     result = []
 
     for sv in df.get_column("sv").unique():
