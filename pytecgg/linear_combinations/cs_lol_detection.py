@@ -37,7 +37,7 @@ def detect_cs_lol(
                     {
                         "epoch": epoch,
                         "sv": sv,
-                        "is_lol": True,
+                        "is_loss_of_lock": True,
                         "is_cycle_slip": None,
                     }
                 )
@@ -48,16 +48,16 @@ def detect_cs_lol(
                 continue
 
             # Gap in the current epoch: loss of lock/sunset
-            is_lol = False
+            is_loss_of_lock = False
             if last_valid_epoch is not None:
                 gap = epoch - last_valid_epoch
                 if gap > max_gap:
-                    is_lol = True
+                    is_loss_of_lock = True
                     result.append(
                         {
                             "epoch": epoch,
                             "sv": sv,
-                            "is_lol": True,
+                            "is_loss_of_lock": True,
                             "is_cycle_slip": None,
                         }
                     )
@@ -66,7 +66,7 @@ def detect_cs_lol(
                     sigma2_mw = None
                     m_prev = None
 
-            if is_lol:
+            if is_loss_of_lock:
                 last_valid_epoch = epoch
                 continue
 
@@ -96,13 +96,13 @@ def detect_cs_lol(
                 {
                     "epoch": epoch,
                     "sv": sv,
-                    "is_lol": is_lol,
-                    "is_cycle_slip": is_cycle_slip if not is_lol else None,
+                    "is_loss_of_lock": is_loss_of_lock,
+                    "is_cycle_slip": is_cycle_slip if not is_loss_of_lock else None,
                 }
             )
 
             last_valid_epoch = epoch
-            if not is_cycle_slip and not is_lol:
+            if not is_cycle_slip and not is_loss_of_lock:
                 k += 1
                 m_prev = mw
 
