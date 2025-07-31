@@ -11,6 +11,7 @@ env:
 
 jobs:
   check_pypi:
+    name: Check if current version is newer than PyPI version
     runs-on: ubuntu-latest
     outputs:
       is_new_version: ${{ steps.check.outputs.is_new_version }}
@@ -86,7 +87,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels
+          name: wheels-${{ matrix.os }}-${{ matrix.python }}
           path: ./wheelhouse/*.whl
 
   build_sdist:
@@ -113,15 +114,16 @@ jobs:
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
     environment:
-      name: release # Richiede configurazione OIDC su PyPI
+      name: release
     permissions:
       id-token: write
     steps:
       - name: Download wheels
         uses: actions/download-artifact@v4
         with:
-          name: wheels
+          pattern: wheels-*
           path: dist/
+          merge-multiple: true
       - name: Download sdist
         uses: actions/download-artifact@v4
         with:
@@ -133,4 +135,4 @@ jobs:
         with:
           packages_dir: dist/
           skip_existing: false
-          verbose: true
+          verbose: true #TODO
