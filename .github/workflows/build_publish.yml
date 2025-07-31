@@ -1,0 +1,136 @@
+name: Build and Publish
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  PACKAGE_NAME: "pytecgg"
+
+
+jobs:
+  check_pypi:
+    runs-on: ubuntu-latest
+    outputs:
+      is_new_version: ${{ steps.check.outputs.is_new_version }}
+    steps:
+      - name: Extract version from tag
+        id: tag
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=${TAG_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Check PyPI version
+        id: check
+        run: |
+          PYPI_JSON=$(curl -s "https://pypi.org/pypi/${{ env.PACKAGE_NAME }}/json" || echo "{}")
+          LATEST_PYPI=$(echo "$PYPI_JSON" | jq -r '.info.version // "0.0.0"')
+          CURRENT_VERSION=${{ steps.tag.outputs.version }}
+
+          if [ "$(printf '%s\n' "$LATEST_PYPI" "$CURRENT_VERSION" | sort -V | tail -1)" != "$CURRENT_VERSION" ]; then
+            echo "::error::Version $CURRENT_VERSION is not newer than PyPI version ($LATEST_PYPI)"
+            echo "is_new_version=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          else
+            echo "Version $CURRENT_VERSION is valid (PyPI: $LATEST_PYPI)"
+            echo "is_new_version=true" >> "$GITHUB_OUTPUT"
+          fi
+
+
+  build_wheels:
+    needs: check_pypi
+    name: Build wheels on ${{ matrix.os }} for Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.11"
+            cp: "cp311"
+          - os: ubuntu-latest
+            python: "3.12"
+            cp: "cp312"
+          - os: ubuntu-latest
+            python: "3.13"
+            cp: "cp313"
+          - os: windows-latest
+            python: "3.11"
+            cp: "cp311"
+          - os: windows-latest
+            python: "3.12"
+            cp: "cp312"
+          - os: windows-latest
+            python: "3.13"
+            cp: "cp313"
+          # - os: macos-latest
+          #   python: "3.11"
+          #   cp: "cp311"
+          # - os: macos-latest
+          #   python: "3.12"
+          #   cp: "cp312"
+          # - os: macos-latest
+          #   python: "3.13"
+          #   cp: "cp313"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.0.1
+        env:
+          CIBW_BUILD: ${{ matrix.cp }}-*
+          CIBW_SKIP: "*-musllinux*"
+        with:
+          output-dir: wheelhouse
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels
+          path: ./wheelhouse/*.whl
+
+  build_sdist:
+    needs: check_pypi
+    name: Build source distribution (sdist)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build sdist with maturin
+        run: maturin sdist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: ./target/wheels/*.tar.gz
+
+  publish_pypi:
+    name: Upload release to PyPI
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    environment:
+      name: release # Richiede configurazione OIDC su PyPI
+    permissions:
+      id-token: write
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels
+          path: dist/
+      - name: Download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages_dir: dist/
+          skip_existing: false
+          verbose: true
