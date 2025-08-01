@@ -62,7 +62,6 @@ fn read_rinex_obs(path: &str) -> PyResult<(PyDataFrame, (f64, f64, f64), String)
     let mut prns = Vec::new();
     let mut codes = Vec::new();
     let mut values = Vec::new();
-    // let mut lli_flags = Vec::new();
 
     // Access the record containing observation data
     match &rinex.record {
@@ -73,7 +72,6 @@ fn read_rinex_obs(path: &str) -> PyResult<(PyDataFrame, (f64, f64, f64), String)
                     prns.push(signal.sv.to_string());
                     codes.push(signal.observable.to_string());
                     values.push(signal.value);
-                    // lli_flags.push(signal.lli.map(|f| f.bits() as i32));
                 }
             }
         },
@@ -89,12 +87,12 @@ fn read_rinex_obs(path: &str) -> PyResult<(PyDataFrame, (f64, f64, f64), String)
         "sv" => &prns,
         "observable" => &codes,
         "value" => &values,
-        // "lli" => &lli_flags,
     ]
     .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
     Ok((PyDataFrame(df), (x, y, z), version))
 }
+
 
 /// Parses a RINEX navigation file and returns a dictionary of DataFrames,
 /// one per GNSS constellation
@@ -230,6 +228,7 @@ fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
 
     Ok(result)
 }
+
 
 #[pymodule]
 fn pytecgg(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
