@@ -10,7 +10,8 @@ repository = "https://github.com/viventriglia/PyTECGg"
 exclude = [
   "rinex/*",
   "tests/*",
-  ".github/*"
+  ".github/*",
+  "images/*"
 ]
 
 [lib]
