@@ -5,6 +5,23 @@ use pyo3_polars::PyDataFrame;
 use std::path::Path;
 use std::collections::{BTreeSet, BTreeMap};
 
+/// Helper function to read a RINEX file (supports regular, compressed, and gzipped RINEX files)
+fn _parse_file<P: AsRef<Path>>(path: P) -> Result<Rinex, ParsingError> {
+    let path = path.as_ref();
+
+    // 1. Try with gzip, if file has .gz extension
+    if path.extension().map_or(false, |ext| ext == "gz") {
+        if let Ok(rinex) = Rinex::from_gzip_file(path) {
+            return Ok(rinex);
+        }
+        // If gzip fails, continue to try regular parsing
+    }
+
+    // 2. Try regular file parsing (works for both .rnx and .crx)
+    Rinex::from_file(path)
+}
+
+
 /// Parses a RINEX observation file and returns the extracted observation data as a DataFrame
 ///
 /// Parameters:
@@ -26,7 +43,7 @@ fn read_rinex_obs(path: &str) -> PyResult<(PyDataFrame, (f64, f64, f64), String)
         ));
     }
 
-    let rinex = Rinex::from_file(path)
+    let rinex = _parse_file(path)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(
             format!("RINEX parsing error: {}", e)
         ))?;
@@ -91,8 +108,18 @@ fn read_rinex_obs(path: &str) -> PyResult<(PyDataFrame, (f64, f64, f64), String)
 #[pyfunction]
 #[pyo3(text_signature = "(path, /)")]
 fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
-    let rinex = Rinex::from_file(Path::new(path))
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("RINEX error: {}", e)))?;
+    let path = Path::new(path);
+    
+    if !path.exists() {
+        return Err(PyErr::new::<pyo3::exceptions::PyFileNotFoundError, _>(
+            format!("File not found: {}", path.display())
+        ));
+    }
+
+    let rinex = _parse_file(path)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(
+            format!("RINEX parsing error: {}", e)
+        ))?;
 
     if !rinex.is_navigation_rinex() {
         return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
