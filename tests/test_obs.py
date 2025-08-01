@@ -40,12 +40,12 @@ def test_read_rinex_obs_valid_v3_hatanaka(obs_v3_hatanaka_compressed_file):
     assert version.startswith("3")
 
 
-# TODO
-# def test_read_rinex_obs_valid_v3_gzipped(obs_v3_gzip_file):
-#     df, (x, y, z) = read_rinex_obs(obs_v3_gzip_file)
-#     assert df.shape[0] > 0
-#     assert all(col in df.columns for col in ["epoch", "sv", "observable", "value"])
-#     assert not all(v is None for v in [x, y, z])
+def test_read_rinex_obs_valid_v3_gzipped(obs_v3_gzip_file):
+    df, (x, y, z), version = read_rinex_obs(obs_v3_gzip_file)
+    assert df.shape[0] > 0
+    assert all(col in df.columns for col in ["epoch", "sv", "observable", "value"])
+    assert not all(v is None for v in [x, y, z])
+    assert version.startswith("3")
 
 
 def test_read_rinex_obs_nonexistent_file(invalid_file):
