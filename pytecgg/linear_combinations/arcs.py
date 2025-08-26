@@ -1,7 +1,7 @@
 import polars as pl
 
 
-def add_arc_id(min_arc_length: int = 30) -> list[pl.Expr]:
+def add_arc_id(min_arc_length: int = 30, receiver_acronym: str = None) -> list[pl.Expr]:
     """
     Identify continuous TEC arcs in GNSS observations
 
@@ -14,23 +14,37 @@ def add_arc_id(min_arc_length: int = 30) -> list[pl.Expr]:
     min_arc_length : int
         Minimum number of consecutive valid observations required for an arc to be considered valid.
         Default: 30 epochs.
+    receiver_acronym : str, optional
+        Acronym of the receiver to prepend to the arc identifier.
+        If provided, the arc ID format will be "<receiver>_<sv>_<YYYYMMDD>_<arcnumber>".
+        Otherwise, the format will be "<sv>_<YYYYMMDD>_<arcnumber>".
+        Default: None.
 
     Returns:
     -------
     list[pl.Expr]
         List of Polars expressions representing:
-        - id_arc: Complete arc identifier in format "sv_YYYYMMDD_arcnumber"
-        - id_arc_valid: Validated arc identifier (None for arcs shorter than min_arc_length)
+        - id_arc: Arc identifier
+        - id_arc_valid: Valid arc identifier (None for arcs shorter than `min_arc_length`)
     """
     _id_arc = pl.col("is_loss_of_lock").cum_sum().over("sv")
     _arc_length = pl.col("gflc_code").is_not_null().sum().over(["sv", _id_arc])
 
-    id_arc = pl.format(
-        "{}_{}_{}",
-        pl.col("sv").str.to_lowercase(),
-        pl.col("epoch").dt.strftime("%Y%m%d"),
-        _id_arc,
-    )
+    if receiver_acronym:
+        id_arc = pl.format(
+            "{}_{}_{}_{}",
+            pl.lit(receiver_acronym),
+            pl.col("sv").str.to_lowercase(),
+            pl.col("epoch").dt.strftime("%Y%m%d"),
+            _id_arc,
+        )
+    else:
+        id_arc = pl.format(
+            "{}_{}_{}",
+            pl.col("sv").str.to_lowercase(),
+            pl.col("epoch").dt.strftime("%Y%m%d"),
+            _id_arc,
+        )
     id_arc_valid = pl.when(_arc_length >= min_arc_length).then(id_arc).otherwise(None)
 
     return [id_arc.alias("id_arc"), id_arc_valid.alias("id_arc_valid")]
