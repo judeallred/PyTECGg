@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 import polars as pl
 
 
@@ -48,3 +50,68 @@ def add_arc_id(min_arc_length: int = 30, receiver_acronym: str = None) -> list[p
     id_arc_valid = pl.when(_arc_length >= min_arc_length).then(id_arc).otherwise(None)
 
     return [id_arc.alias("id_arc"), id_arc_valid.alias("id_arc_valid")]
+
+
+def remove_cs_jumps(
+    df: pl.DataFrame, linear_combinations: Iterable[str]
+) -> pl.DataFrame:
+    """
+    Compute leveled GNSS fields by removing cycle-slip jumps within valid arcs
+
+    For each column in `linear_combinations`, the function:
+    1. Calculates differences between consecutive observations within valid arcs
+    2. Identifies cycle slip contributions
+    3. Computes cumulative sum of cycle slip jumps within each arc
+    4. Generates levelled columns by removing cumulative cycle slip effects
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Input DataFrame containing GNSS observations with:
+        - id_arc_valid: Valid arc identifiers
+        - is_cycle_slip: Cycle slip indicators
+        - Columns specified in linear_combinations
+    linear_combinations : Iterable[str]
+        List of column names to level (e.g., ["gflc_phase", "gflc_code"])
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with levelled columns (suffix '_levelled') added
+    """
+    if not isinstance(linear_combinations, Iterable):
+        raise TypeError("linear_combinations must be an iterable of column names")
+
+    df_ = df.clone()
+
+    for lc_ in linear_combinations:
+        # Calculate differences within valid arcs
+        df_ = df_.with_columns(
+            pl.when(pl.col("id_arc_valid").is_not_null())
+            .then(pl.col(lc_) - pl.col(lc_).shift(1))
+            .otherwise(None)
+            .alias(f"_delta_{lc_}")
+        )
+
+        # Identify cycle slip contributions
+        df_ = df_.with_columns(
+            pl.when(pl.col("is_cycle_slip"))
+            .then(pl.col(f"_delta_{lc_}"))
+            .otherwise(0)
+            .alias(f"_cs_delta_{lc_}")
+        )
+
+        # Cumulative sum of cycle slips within each arc
+        df_ = df_.with_columns(
+            pl.col(f"_cs_delta_{lc_}")
+            .cum_sum()
+            .over("id_arc_valid")
+            .alias(f"_cs_cumsum_{lc_}")
+        )
+
+        # Create levelled column
+        df_ = df_.with_columns(
+            (pl.col(lc_) - pl.col(f"_cs_cumsum_{lc_}")).alias(f"{lc_}_levelled")
+        )
+
+    return df_.drop(pl.col("^_.*$"))
