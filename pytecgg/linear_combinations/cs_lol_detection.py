@@ -4,7 +4,7 @@ from datetime import timedelta
 import polars as pl
 import numpy as np
 
-from pytecgg.linear_combinations import FREQ_BANDS, C
+from .constants import FREQ_BANDS, C
 
 
 def _infer_temporal_resolution(df: pl.DataFrame) -> timedelta:

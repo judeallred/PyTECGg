@@ -3,7 +3,7 @@ from typing import Any
 
 import polars as pl
 
-from pytecgg.satellites import CONSTELLATION_PARAMS
+from .constants import CONSTELLATION_PARAMS
 
 
 def _parse_time(time_str: str, time_system: str, time_offset: timedelta) -> datetime:

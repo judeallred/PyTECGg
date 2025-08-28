@@ -1,6 +1,6 @@
 import polars as pl
 
-from . import C
+from .constants import C
 
 
 def _calculate_gflc_phase(

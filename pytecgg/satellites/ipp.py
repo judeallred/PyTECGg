@@ -1,8 +1,9 @@
-import numpy as np
 from typing import Tuple
+
+import numpy as np
 from pymap3d import ecef2geodetic, ecef2aer
 
-from . import RE
+from .constants import RE
 
 
 def calculate_ipp(

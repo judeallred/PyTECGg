@@ -7,7 +7,7 @@ import numpy as np
 import polars as pl
 
 from pytecgg.satellites.kepler import kepler
-from pytecgg.satellites import GNSS_CONSTANTS, TOL_KEPLER
+from .constants import GNSS_CONSTANTS, TOL_KEPLER
 
 
 def _is_ephemeris_valid(data: dict, sv_id: str, required_keys: dict) -> bool:
