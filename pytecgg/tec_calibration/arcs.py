@@ -1,9 +1,14 @@
-from collections.abc import Iterable
+from warnings import warn
+from datetime import timedelta
 
 import polars as pl
 
+from pytecgg.linear_combinations import detect_cs_lol
 
-def add_arc_id(min_arc_length: int = 30, receiver_acronym: str = None) -> list[pl.Expr]:
+
+def _add_arc_id(
+    min_arc_length: int = 30, receiver_acronym: str = None
+) -> list[pl.Expr]:
     """
     Identify continuous TEC arcs in GNSS observations
 
@@ -52,9 +57,7 @@ def add_arc_id(min_arc_length: int = 30, receiver_acronym: str = None) -> list[p
     return [id_arc.alias("id_arc"), id_arc_valid.alias("id_arc_valid")]
 
 
-def remove_cs_jumps(
-    df: pl.DataFrame, linear_combinations: Iterable[str]
-) -> pl.DataFrame:
+def _remove_cs_jumps(df: pl.DataFrame) -> pl.DataFrame:
     """
     Compute leveled GNSS fields by removing cycle-slip jumps within valid arcs
 
@@ -70,21 +73,26 @@ def remove_cs_jumps(
         Input DataFrame containing GNSS observations with:
         - id_arc_valid: Valid arc identifiers
         - is_cycle_slip: Cycle slip indicators
-        - Columns specified in linear_combinations
-    linear_combinations : Iterable[str]
-        List of column names to level (e.g., ["gflc_phase", "gflc_code"])
+        - linear_combinations, as calculated in `calculate_linear_combinations`
 
     Returns
     -------
     pl.DataFrame
         DataFrame with levelled columns (suffix '_levelled') added
     """
-    if not isinstance(linear_combinations, Iterable):
-        raise TypeError("linear_combinations must be an iterable of column names")
+    predefined_lin_combs = ["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]
+    lin_combs = [lc_ for lc_ in predefined_lin_combs if lc_ in df.columns]
+
+    if len(lin_combs) == 0:
+        warn(
+            "No linear combinations found in DataFrame columns; expected at least one of: "
+            + ", ".join(predefined_lin_combs)
+        )
+        return df
 
     df_ = df.clone()
 
-    for lc_ in linear_combinations:
+    for lc_ in lin_combs:
         # Calculate differences within valid arcs
         df_ = df_.with_columns(
             pl.when(pl.col("id_arc_valid").is_not_null())
@@ -115,3 +123,73 @@ def remove_cs_jumps(
         )
 
     return df_.drop(pl.col("^_.*$"))
+
+
+def extract_arcs(
+    df: pl.DataFrame,
+    const_symb: str,
+    threshold_abs: float = 5,
+    threshold_std: float = 5,
+    min_arc_length: int = 30,
+    receiver_acronym: str = None,
+    max_gap: timedelta = None,
+) -> pl.DataFrame:
+    """
+    Extract continuous TEC arcs and compute leveled GNSS fields
+
+    The function performs the following steps:
+    1. Detects loss-of-lock events and cycle slips
+    2. Identifies valid arcs, discarding short ones
+    3. Removes cycle-slip jumps within valid arcs
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Input DataFrame containing GNSS observations with:
+        - epoch: Observation epochs
+        - sv: Satellite identifiers
+        - TEC-related linear combinations (e.g., gflc_code, gflc_phase, etc.)
+    const_symb : str
+        Constellation symbol (e.g., 'G' for GPS, 'E' for Galileo) used in cycle slip detection.
+    threshold_abs : float, optional
+        Absolute threshold for detecting cycle slips; default is 5
+    threshold_std : float, optional
+        Standard deviation multiplier threshold for detecting cycle slips; default is 5
+    min_arc_length : int, optional
+        Minimum number of consecutive valid observations required for an arc to be considered valid.
+        Default: 30 epochs.
+    receiver_acronym : str, optional
+        Acronym of the receiver to prepend to arc identifiers.
+        If provided, the arc ID format will be "<receiver>_<sv>_<YYYYMMDD>_<arcnumber>".
+        Otherwise, the format will be "<sv>_<YYYYMMDD>_<arcnumber>".
+        Default: None.
+    max_gap : timedelta, optional
+        Maximum allowed time gap between observations before declaring LoL (default: inferred
+        from df's temporal resolution)
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with:
+        - cycle slip and loss-of-lock flags
+        - arc identifiers (id_arc, id_arc_valid)
+        - levelled linear combinations (suffix '_levelled')
+    """
+    df_ = detect_cs_lol(
+        df,
+        system=const_symb,
+        threshold_abs=threshold_abs,
+        threshold_std=threshold_std,
+        max_gap=max_gap,
+    )
+
+    df_lc_arcs = df.join(
+        df_,
+        on=["epoch", "sv"],
+    ).with_columns(
+        _add_arc_id(min_arc_length=min_arc_length, receiver_acronym=receiver_acronym)
+    )
+
+    return _remove_cs_jumps(
+        df=df_lc_arcs,
+    )
