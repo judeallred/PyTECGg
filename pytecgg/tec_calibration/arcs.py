@@ -144,6 +144,55 @@ def _remove_cs_jumps(df: pl.DataFrame, threshold_jump: float = 10.0) -> pl.DataF
     return df_.drop(pl.col("^_.*$"))
 
 
+def _level_phase_to_code(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Level phase measurements to code measurements within valid arcs
+
+    For each valid arc, the function computes the mean difference between
+    phase and code linear combinations and adjusts the phase measurements accordingly.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Input DataFrame containing GNSS observations with:
+        - id_arc_valid: Valid arc identifiers
+        - gflc_phase_fix: Fixed phase linear combination
+        - gflc_code_fix: Fixed code linear combination
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with leveled phase column added
+    """
+    if "gflc_phase_fix" not in df.columns or "gflc_code_fix" not in df.columns:
+        warn(
+            "Both 'gflc_phase_fix' and 'gflc_code_fix' must be present in DataFrame columns to level phase to code."
+        )
+        return df
+
+    df_ = df.with_columns(
+        (pl.col("gflc_phase_fix") - pl.col("gflc_code_fix")).alias("_phase_code_diff")
+    )
+
+    # Calculate the mean of (phase - code) over each valid arc
+    df_ = df_.with_columns(
+        pl.when(pl.col("id_arc_valid").is_not_null())
+        .then(pl.col("_phase_code_diff").mean().over("id_arc_valid"))
+        .otherwise(None)
+        .alias("_mean_phase_code_diff")
+    )
+
+    # Calculate the final, levelled value
+    df_ = df_.with_columns(
+        pl.when(pl.col("id_arc_valid").is_not_null())
+        .then(pl.col("gflc_phase_fix") - pl.col("_mean_phase_code_diff"))
+        .otherwise(None)
+        .alias("gflc_levelled")
+    )
+
+    return df_.drop(pl.col("^_.*$"))
+
+
 def extract_arcs(
     df: pl.DataFrame,
     const_symb: str,
@@ -162,6 +211,7 @@ def extract_arcs(
     2. Identifies valid arcs, discarding short ones
     3. Removes cycle-slip jumps within valid arcs
     4. Additional check: corrects significant jumps between consecutive epochs
+    5. Calculates arc-levelled GFLC values
 
     Parameters
     ----------
@@ -199,6 +249,7 @@ def extract_arcs(
         - cycle slip and loss-of-lock flags
         - arc identifiers (id_arc, id_arc_valid)
         - fixed linear combinations (suffix '_fix')
+        - gflc_levelled: arc-levelled GFLC values
     """
     df_ = detect_cs_lol(
         df,
@@ -215,4 +266,6 @@ def extract_arcs(
         _add_arc_id(min_arc_length=min_arc_length, receiver_acronym=receiver_acronym)
     )
 
-    return _remove_cs_jumps(df=df_lc_arcs, threshold_jump=threshold_jump)
+    df_lc_arcs_fix = _remove_cs_jumps(df=df_lc_arcs, threshold_jump=threshold_jump)
+
+    return _level_phase_to_code(df=df_lc_arcs_fix)
