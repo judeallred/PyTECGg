@@ -57,15 +57,16 @@ def _add_arc_id(
     return [id_arc.alias("id_arc"), id_arc_valid.alias("id_arc_valid")]
 
 
-def _remove_cs_jumps(df: pl.DataFrame) -> pl.DataFrame:
+def _remove_cs_jumps(df: pl.DataFrame, threshold_jump: float = 10.0) -> pl.DataFrame:
     """
-    Compute leveled GNSS fields by removing cycle-slip jumps within valid arcs
+    Fix GNSS combinations by removing cycle-slip jumps within valid arcs
 
     For each column in `linear_combinations`, the function:
     1. Calculates differences between consecutive observations within valid arcs
     2. Identifies cycle slip contributions
     3. Computes cumulative sum of cycle slip jumps within each arc
-    4. Generates levelled columns by removing cumulative cycle slip effects
+    4. Fixes linear combinations by removing cumulative cycle slip effects
+    5. Additional check: detects and corrects jumps above threshold between consecutive epochs
 
     Parameters
     ----------
@@ -74,11 +75,15 @@ def _remove_cs_jumps(df: pl.DataFrame) -> pl.DataFrame:
         - id_arc_valid: Valid arc identifiers
         - is_cycle_slip: Cycle slip indicators
         - linear_combinations, as calculated in `calculate_linear_combinations`
+    threshold_jump : float, optional
+        Threshold for detecting significant jumps between consecutive epochs.
+        If the absolute difference between consecutive values exceeds this threshold,
+        it will be treated as a jump and corrected. Default is 10
 
     Returns
     -------
     pl.DataFrame
-        DataFrame with levelled columns (suffix '_levelled') added
+        DataFrame with fixed columns (suffix '_fix') added
     """
     predefined_lin_combs = ["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]
     lin_combs = [lc_ for lc_ in predefined_lin_combs if lc_ in df.columns]
@@ -109,17 +114,31 @@ def _remove_cs_jumps(df: pl.DataFrame) -> pl.DataFrame:
             .alias(f"_cs_delta_{lc_}")
         )
 
-        # Cumulative sum of cycle slips within each arc
+        # Additional check: detect significant jumps between consecutive epochs
+        # This catches jumps that might not be flagged as cycle slips
         df_ = df_.with_columns(
-            pl.col(f"_cs_delta_{lc_}")
-            .cum_sum()
-            .over("id_arc_valid")
-            .alias(f"_cs_cumsum_{lc_}")
+            pl.when(
+                (pl.col("id_arc_valid").is_not_null())
+                & (pl.col(f"_delta_{lc_}").abs() > threshold_jump)
+                & (
+                    ~pl.col("is_cycle_slip")
+                )  # Only if not already flagged as cycle slip
+            )
+            .then(pl.col(f"_delta_{lc_}"))
+            .otherwise(0)
+            .alias(f"_jump_delta_{lc_}")
         )
 
-        # Create levelled column
+        # Combine cycle slip and jump contributions
+        total_jump = pl.col(f"_cs_delta_{lc_}") + pl.col(f"_jump_delta_{lc_}")
+
+        # Cumulative sum of cycle slips and jumps within each arc
         df_ = df_.with_columns(
-            (pl.col(lc_) - pl.col(f"_cs_cumsum_{lc_}")).alias(f"{lc_}_levelled")
+            total_jump.cum_sum().over("id_arc_valid").alias(f"_total_cumsum_{lc_}")
+        )
+
+        df_ = df_.with_columns(
+            (pl.col(lc_) - pl.col(f"_total_cumsum_{lc_}")).alias(f"{lc_}_fix")
         )
 
     return df_.drop(pl.col("^_.*$"))
@@ -128,19 +147,21 @@ def _remove_cs_jumps(df: pl.DataFrame) -> pl.DataFrame:
 def extract_arcs(
     df: pl.DataFrame,
     const_symb: str,
-    threshold_abs: float = 5,
-    threshold_std: float = 5,
+    threshold_abs: float = 5.0,
+    threshold_std: float = 5.0,
     min_arc_length: int = 30,
     receiver_acronym: str = None,
     max_gap: timedelta = None,
+    threshold_jump: float = 10.0,
 ) -> pl.DataFrame:
     """
-    Extract continuous TEC arcs and compute leveled GNSS fields
+    Extract continuous TEC arcs and fix GNSS linear combinations
 
     The function performs the following steps:
     1. Detects loss-of-lock events and cycle slips
     2. Identifies valid arcs, discarding short ones
     3. Removes cycle-slip jumps within valid arcs
+    4. Additional check: corrects significant jumps between consecutive epochs
 
     Parameters
     ----------
@@ -166,6 +187,10 @@ def extract_arcs(
     max_gap : timedelta, optional
         Maximum allowed time gap between observations before declaring LoL (default: inferred
         from df's temporal resolution)
+    threshold_jump : float, optional
+        Threshold for detecting significant jumps between consecutive epochs.
+        If the absolute difference between consecutive values exceeds this threshold,
+        it will be treated as a jump and corrected. Default is 10
 
     Returns
     -------
@@ -173,7 +198,7 @@ def extract_arcs(
         DataFrame with:
         - cycle slip and loss-of-lock flags
         - arc identifiers (id_arc, id_arc_valid)
-        - levelled linear combinations (suffix '_levelled')
+        - fixed linear combinations (suffix '_fix')
     """
     df_ = detect_cs_lol(
         df,
@@ -190,6 +215,4 @@ def extract_arcs(
         _add_arc_id(min_arc_length=min_arc_length, receiver_acronym=receiver_acronym)
     )
 
-    return _remove_cs_jumps(
-        df=df_lc_arcs,
-    )
+    return _remove_cs_jumps(df=df_lc_arcs, threshold_jump=threshold_jump)
