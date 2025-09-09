@@ -67,14 +67,18 @@ pip install pytecgg --no-binary :all:
 ```python
 from pytecgg.parsing import read_rinex_nav, read_rinex_obs
 
+NAV_PATH = "./path/to/your/nav_file.rnx"
+OBS_PATH = "./path/to/your/obs_file.rnx"
+
 # Load a RINEX navigation file into a dictionary of DataFrames (one per constellation)
-nav_dict = read_rinex_nav("./path/to/your/nav_file.rnx")
+nav_dict = read_rinex_nav(NAV_PATH)
 
 # Load a RINEX observation file and extract:
 # - a DataFrame of observations,
 # - the receiver's approximate position in ECEF,
 # - the RINEX version string.
-df_obs, rec_pos, version = read_rinex_obs("./path/to/your/obs_file.rnx")
+df_obs, rec_pos, version = read_rinex_obs(OBS_PATH)
+rec_name = OBS_PATH.split("/")[-1][:4].lower()
 ```
 
 Timestamps in the epoch column are parsed as strings by default.
@@ -101,16 +105,16 @@ Starting from the basic observables, we can compute the following linear [combin
 The function `calculate_linear_combinations` supports both phase and code versions of GFLC and IFLC. You can choose which `combinations` to compute:
 
 ```python
-from pytecgg.satellites.ephemeris import prepare_ephemeris
-from pytecgg.linear_combinations.lc_calculation import calculate_linear_combinations
+from pytecgg.satellites import prepare_ephemeris
+from pytecgg.linear_combinations import calculate_linear_combinations
 
 # Prepare the ephemerides, e.g. for Galileo
-ephem_dict = prepare_ephemeris(nav_dict, constellation='Galileo')
+ephem_dict = prepare_ephemeris(nav_dict, constellation="Galileo")
 
 df_lc = calculate_linear_combinations(
     df_obs,
-    system='E',
-    combinations=['gflc_phase', 'mw'],
+    system="E",
+    combinations=["gflc_phase", "gflc_code", "mw"],
 )
 ```
 
@@ -131,33 +135,35 @@ If not specified, the default is `["gflc_phase", "gflc_code", "mw"]`.
 `ephem_dict` is a dictionary containing ephemeris parameters, keyed by satellite ID.
 The resulting `df_lc` is a Polars DataFrame with one row per satellite and epoch, containing the requested combinations.
 
-### Cycle slip (CS) and Loss-of-Lock (LoL) detection 🚨
+### TEC arcs identification and correction 🔎
 
-To ensure integrity in GNSS processing, it's essential to identify CS and LoL events, which indicate disruptions in the carrier-phase signal or receiver-satellite tracking.
+To ensure integrity in GNSS processing, it's essential to identify cycle slip (CS) and loss-of-lock (LoL) events, which indicate disruptions in the carrier-phase signal or receiver-satellite tracking.
 
-The function `detect_cs_lol` uses the MW combination to detect anomalies in the observation stream:
+The function `extract_arcs` handles this automatically by detecting CS and LoL events, discarding arcs shorter than `min_arc_length` epochs, correcting residual jumps (greater than `threshold_jumps`) in the linear combinations, and producing arc-levelled GFLC.
 
 ```python
-from pytecgg.linear_combinations.cs_lol_detection import detect_cs_lol
+from pytecgg.tec_calibration import extract_arcs
 
-df_cs_lol = detect_cs_lol(
-    df_lc,
-    system='E',
+df_arcs = extract_arcs(
+    df=df_lc,
+    const_symb="E",
     threshold_abs=10,
-    threshold_std=5,
+    threshold_std=10,
+    threshold_jump=5,
+    receiver_acronym=rec_name,
 )
 ```
 
-CSs are flagged when abrupt changes in the MW combination exceed either a given number of standard deviations (`threshold_std`) or a fixed absolute threshold (`threshold_abs`). Additionally, if the time gap between consecutive epochs becomes too large, a LoL is declared; the `max_gap` argument can be explicitly set or automatically inferred from the data.
+The output is a Polars DataFrame with cycle slip and loss-of-lock flags, unique arc identifiers, CS-corrected linear combinations, and arc-levelled GFLC values.
 
-The output is a Polars DataFrame with one row per epoch-satellite, containing boolean flags: `is_cycle_slip` signals the presence of a cycle slip, while `is_loss_of_lock` indicates a discontinuity due to signal loss or satellite setting. When LoL occurs, `is_cycle_slip` is set to `None` to avoid ambiguity.
+In particular, CSs are flagged when abrupt changes in the MW combination exceed either a given number of standard deviations (`threshold_std`) or a fixed absolute threshold (`threshold_abs`). Additionally, if the time gap between consecutive epochs becomes too large, a LoL is declared; a `max_gap` argument can be explicitly set or automatically inferred from the data.
 
 ### Satellite coordinates and Ionospheric Pierce Point (IPP) 🛰️
 
 To get the satellite's position in space, we can compute ECEF coordinates for each satellite–epoch and add them as columns to an existing Polars DataFrame:
 
 ```python
-from pytecgg.satellites.positions import satellite_coordinates
+from pytecgg.satellites import satellite_coordinates
 
 df_lc_pos = df_lc.with_columns(
     *satellite_coordinates(
@@ -172,7 +178,7 @@ df_lc_pos = df_lc.with_columns(
 We can then compute the IPP — the intersection between the satellite–receiver line of sight and a thin-shell ionosphere at a fixed altitude:
 
 ```python
-from pytecgg.satellites.ipp import calculate_ipp
+from pytecgg.satellites import calculate_ipp
 
 # Extract satellite positions as a NumPy array
 sat_ecef_array = df_lc_pos.select(["sat_x", "sat_y", "sat_z"]).to_numpy()
