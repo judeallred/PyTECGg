@@ -1,7 +1,7 @@
 import polars as pl
 from typing import Optional, Literal
 
-from . import OBS_MAPPING, FREQ_BANDS
+from .constants import OBS_MAPPING, FREQ_BANDS
 from .gflc import _calculate_gflc_code, _calculate_gflc_phase
 from .iflc import _calculate_iflc_code, _calculate_iflc_phase
 from .mw import _calculate_melbourne_wubbena
