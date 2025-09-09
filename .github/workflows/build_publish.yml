@@ -77,6 +77,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check commit and version
+        run: |
+          echo "Commit hash: $(git rev-parse HEAD)"
+          echo "Cargo.toml version:"
+          grep version Cargo.toml
+          echo "pyproject.toml version:"
+          grep version pyproject.toml
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.0.1
         env:
@@ -97,6 +105,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check commit and version
+        run: |
+          echo "Commit hash: $(git rev-parse HEAD)"
+          echo "Cargo.toml version:"
+          grep version Cargo.toml
+          echo "pyproject.toml version:"
+          grep version pyproject.toml
 
       - name: Install maturin
         run: pip install maturin
