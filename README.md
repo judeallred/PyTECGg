@@ -29,12 +29,12 @@ This package:
 - supports RINEX V2-3-4
 - provides seamless decompression for RINEX files
 
+👉 [**Contributing to PyTECGg**](./CONTRIBUTING.md)
+
 | ![Earth's ionosphere and GNSS satellites](images/project_cover.webp) |
 |:--:| 
 | *Generated image of Earth's ionosphere with GNSS satellites studying TEC* |
 
-
-👉 [**Contributing to PyTECGg**](./CONTRIBUTING.md)
 
 
 ## Installation
