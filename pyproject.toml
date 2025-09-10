@@ -27,6 +27,12 @@ python_files = "test_*.py"
 python_functions = "test_*"
 addopts = "-v --cov=pytecgg --cov-report=term-missing"
 
+[tool.coverage.run]
+omit = [
+    "*/__init__.py",
+    "*/constants.py"
+]
+
 [tool.maturin]
 module-name = "pytecgg"
 
