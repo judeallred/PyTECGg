@@ -14,9 +14,9 @@ from .constants import ALTITUDE_KM, LONGITUDES, LATITUDES
 
 def _calculate_modip_grid(year: int, altitude_km: float = ALTITUDE_KM) -> np.ndarray:
     """
-    Calculate MODIP grid for a specific year.
+    Calculate MoDip grid for a specific year.
 
-    MODIP (Modified Dip Latitude) is calculated from the IGRF magnetic field model.
+    MoDip (Modified Dip Latitude) is calculated from the IGRF magnetic field model.
 
     Parameters:
     -----------
@@ -27,8 +27,8 @@ def _calculate_modip_grid(year: int, altitude_km: float = ALTITUDE_KM) -> np.nda
 
     Returns:
     --------
-    tuple: (modip_grid, longitudes, latitudes)
-        MODIP grid values and corresponding longitude/latitude arrays
+    np.ndarray
+        MoDip grid values
     """
     dates = datetime.datetime(year, 1, 1)
     lon_grid, lat_grid = np.meshgrid(LONGITUDES, LATITUDES, indexing="ij")
@@ -42,7 +42,7 @@ def _calculate_modip_grid(year: int, altitude_km: float = ALTITUDE_KM) -> np.nda
     Bh = np.sqrt(Be**2 + Bn**2)
     inclination_rad = -np.arctan2(Bu, Bh)
 
-    # MODIP (Modified Dip Latitude)
+    # MoDip (Modified Dip Latitude)
     lat_rad = np.deg2rad(lat_grid)
     modip = np.rad2deg(np.arctan(inclination_rad / np.sqrt(np.cos(lat_rad))))
 
@@ -63,14 +63,14 @@ def _polar_nan_values(modip: np.ndarray, lats_grid: np.ndarray) -> np.ndarray:
     Parameters:
     -----------
     modip_deg : np.ndarray
-        MODIP grid with potential NaN values at poles
+        MoDip grid with potential NaN values at poles
     lats_grid : np.ndarray
         Latitude grid for identifying pole locations
 
     Returns:
     --------
-    modip_deg_clean : np.ndarray
-        MODIP grid with NaN values replaced by pole values
+    modip : np.ndarray
+        MoDip grid with NaN values replaced by pole values
     """
     for i in range(modip.shape[0]):
         nan_mask = np.isnan(modip[i])
@@ -79,12 +79,19 @@ def _polar_nan_values(modip: np.ndarray, lats_grid: np.ndarray) -> np.ndarray:
 
 
 def _save_modip_grid(modip_grid: np.ndarray, year: int) -> None:
+    """
+    Save a MoDip grid for a given year to a compressed .npz file.
+    For internal use to precompute MoDip grids distributed with the package.
+    """
     outdir = Path(__file__).parent / "modip_grids"
     outfile = outdir / f"modip_{year}.npz"
     np.savez_compressed(outfile, modip_grid, allow_pickle=False)
 
 
 def _load_modip_grid(year: int) -> np.ndarray:
+    """
+    Load a precomputed MoDip grid for a given year, or compute it if missing.
+    """
     fname = f"modip_{year}.npz"
     modip_grids = files("pytecgg.tec_calibration.modip_grids").joinpath(fname)
 
@@ -105,24 +112,26 @@ def extract_modip(
     year: int,
 ) -> np.ndarray:
     """
-    Interpolate MODIP values for specific coordinates. Accepts either:
-        - Two arrays (lon, lat) as a tuple
-        - A single array-like of shape (N, 2) with (lon, lat) pairs
+    Interpolate MODIP values for given coordinates in ECEF (x, y, z).
 
-    Uses linear interpolation to calculate MODIP values at arbitrary
-    longitude/latitude points based on a precomputed grid.
+    The function converts input ECEF coordinates to geodetic
+    latitude/longitude and interpolates MODIP values from the
+    precomputed grid.
 
     Parameters
     ----------
-    coords : tuple of arrays or array-like
-        Either (lon_array, lat_array) or array-like [[lon1, lat1], [lon2, lat2], ...]
-    modip_grid : np.ndarray
-        Precomputed MODIP grid
+    coords : tuple of arrays, sequence of tuples, or np.ndarray
+        Input coordinates in ECEF system. Either:
+        - Tuple of arrays (x, y, z),
+        - Sequence of (x, y, z) tuples,
+        - Array of shape (N, 3) with (x, y, z).
+    year : int
+        Year for which the MODIP grid is used.
 
     Returns:
     --------
-    modip_values : np.ndarray
-        Interpolated MODIP values for the specified coordinates
+    np.ndarray
+        Interpolated MoDip values for the specified coordinates
     """
     if isinstance(coords, tuple) and len(coords) == 3:
         x, y, z = coords
