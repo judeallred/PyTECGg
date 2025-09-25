@@ -6,6 +6,7 @@ from typing import Sequence, Union
 
 import numpy as np
 from ppigrf import igrf
+from pymap3d import ecef2geodetic
 from scipy.interpolate import RegularGridInterpolator
 
 from .constants import ALTITUDE_KM, LONGITUDES, LATITUDES
@@ -97,11 +98,11 @@ def _load_modip_grid(year: int) -> np.ndarray:
 
 def extract_modip(
     coords: Union[
-        tuple[np.ndarray, np.ndarray],
-        Sequence[tuple[float, float]],
+        tuple[np.ndarray, np.ndarray, np.ndarray],
+        Sequence[tuple[float, float, float]],
         np.ndarray,
     ],
-    modip_grid: np.ndarray,
+    year: int,
 ) -> np.ndarray:
     """
     Interpolate MODIP values for specific coordinates. Accepts either:
@@ -123,16 +124,20 @@ def extract_modip(
     modip_values : np.ndarray
         Interpolated MODIP values for the specified coordinates
     """
-    if isinstance(coords, tuple) and len(coords) == 2:
-        lon, lat = coords
-        points = np.column_stack([lon, lat])
+    if isinstance(coords, tuple) and len(coords) == 3:
+        x, y, z = coords
+        points_ecef = np.column_stack([x, y, z])
     else:
-        points = np.array(coords)
-        if points.ndim != 2 or points.shape[1] != 2:
+        points_ecef = np.array(coords)
+        if points_ecef.ndim != 2 or points_ecef.shape[1] != 3:
             raise ValueError(
-                "coords must be either a tuple (lon, lat) or an array of shape (N, 2)"
+                "coords must be either a tuple (x, y, z) or an array of shape (N, 3)"
             )
 
+    lat, lon, _ = ecef2geodetic(points_ecef[:, 0], points_ecef[:, 1], points_ecef[:, 2])
+    points_geo = np.column_stack([lon, lat])
+
+    modip_grid = _load_modip_grid(year)
     interpolator = RegularGridInterpolator(
         (LONGITUDES, LATITUDES),
         modip_grid,
@@ -141,4 +146,4 @@ def extract_modip(
         fill_value=None,
     )
 
-    return interpolator(points)
+    return interpolator(points_geo).round(2)
