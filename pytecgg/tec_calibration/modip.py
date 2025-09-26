@@ -1,6 +1,7 @@
 import datetime
 import warnings
 from pathlib import Path
+from functools import lru_cache
 from importlib.resources import files
 from typing import Sequence, Union, Literal
 
@@ -88,6 +89,7 @@ def _save_modip_grid(modip_grid: np.ndarray, year: int) -> None:
     np.savez_compressed(outfile, modip_grid, allow_pickle=False)
 
 
+@lru_cache(maxsize=5)
 def _load_modip_grid(year: int) -> np.ndarray:
     """
     Load a precomputed MoDip grid for a given year, or compute it if missing.
