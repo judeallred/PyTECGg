@@ -105,40 +105,35 @@ def _load_modip_grid(year: int) -> np.ndarray:
         return _calculate_modip_grid(year)
 
 
-def extract_modip(
+def _parse_coords(
     coords: Union[
-        tuple[np.ndarray, np.ndarray, np.ndarray],
         tuple[np.ndarray, np.ndarray],
+        tuple[np.ndarray, np.ndarray, np.ndarray],
+        Sequence[tuple[float, float]],
         Sequence[tuple[float, float, float]],
         np.ndarray,
     ],
-    year: int,
     coord_type: Literal["ecef", "geo"],
 ) -> np.ndarray:
     """
-    Interpolate MODIP values for given coordinates in ECEF (x, y, z).
-
-    The function converts input ECEF coordinates to geodetic
-    latitude/longitude and interpolates MODIP values from the
-    precomputed grid.
+    Parse coordinates into lon/lat arrays.
 
     Parameters
     ----------
-    coords : tuple of arrays, sequence of tuples, or np.ndarray
-        Input coordinates in ECEF system. Either:
-        - Tuple of arrays (x, y, z),
-        - Sequence of (x, y, z) tuples,
-        - Array of shape (N, 3) with (x, y, z).
-    year : int
-        Year for which the MODIP grid is used.
-    coord_type : Literal["ecef", "geo"]
-        Type of input coordinates:
-        - "ecef" for ECEF coordinates.
-        - "geo" for geographic coordinates; lon, lat expected.
-    Returns:
-    --------
+    coords : tuple, sequence, or np.ndarray
+        Input coordinates, in one of the following forms:
+        - (lon, lat) tuple of arrays
+        - (x, y, z) tuple of arrays
+        - Sequence of (lon, lat) tuples
+        - Sequence of (x, y, z) tuples
+        - np.ndarray of shape (N, 2) or (N, 3)
+    coord_type : {"ecef", "geo"}
+        Type of input coordinates.
+
+    Returns
+    -------
     np.ndarray
-        Interpolated MoDip values for the specified coordinates
+        Array of shape (N, 2) with columns [lon, lat].
     """
     if coord_type == "geo":
         if isinstance(coords, tuple) and len(coords) == 2:
@@ -148,7 +143,7 @@ def extract_modip(
             points_geo = np.array(coords)
             if points_geo.ndim != 2 or points_geo.shape[1] != 2:
                 raise ValueError(
-                    "For coord_type='geo', coords must be tuple (lon, lat) or array of shape (N, 2)"
+                    f"Invalid coords for coord_type='{coord_type}': expected shape (N, 2), got {points_geo.shape}"
                 )
     elif coord_type == "ecef":
         if isinstance(coords, tuple) and len(coords) == 3:
@@ -158,13 +153,52 @@ def extract_modip(
             points_ecef = np.array(coords)
             if points_ecef.ndim != 2 or points_ecef.shape[1] != 3:
                 raise ValueError(
-                    "coords must be either a tuple (x, y, z) or an array of shape (N, 3)"
+                    f"Invalid coords for coord_type='{coord_type}': expected shape (N, 3), got {points_ecef.shape}"
                 )
         lat, lon, _ = ecef2geodetic(
             points_ecef[:, 0], points_ecef[:, 1], points_ecef[:, 2]
         )
         points_geo = np.column_stack([lon, lat])
+    return points_geo
 
+
+def extract_modip(
+    coords: Union[
+        tuple[np.ndarray, np.ndarray],
+        tuple[np.ndarray, np.ndarray, np.ndarray],
+        Sequence[tuple[float, float]],
+        Sequence[tuple[float, float, float]],
+        np.ndarray,
+    ],
+    year: int,
+    coord_type: Literal["ecef", "geo"],
+) -> np.ndarray:
+    """
+    Interpolate MoDip values for given ECEF or geodetic (longitude/latitude)
+    coordinates. The function interpolates MoDip values from precomputed grids,
+    if available.
+
+    Parameters
+    ----------
+    coords : tuple, sequence, or np.ndarray
+        Input coordinates, in one of the following forms:
+        - (lon, lat) tuple of arrays
+        - (x, y, z) tuple of arrays
+        - Sequence of (lon, lat) tuples
+        - Sequence of (x, y, z) tuples
+        - np.ndarray of shape (N, 2) or (N, 3)
+    year : int
+        Year for which the MoDip grid is used.
+    coord_type : Literal["ecef", "geo"]
+        Type of input coordinates:
+        - "ecef" for ECEF coordinates.
+        - "geo" for geographic coordinates; lon, lat expected.
+    Returns:
+    --------
+    np.ndarray
+        Interpolated MoDip values for the specified coordinates
+    """
+    points_geo = _parse_coords(coords, coord_type)
     modip_grid = _load_modip_grid(year)
     interpolator = RegularGridInterpolator(
         (LONGITUDES, LATITUDES),
