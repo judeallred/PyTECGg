@@ -29,26 +29,41 @@ def _ensure_R(qr_result):
 
 
 def _mapping_function(elevation: np.ndarray, h_ipp: float) -> np.ndarray:
+    """
+    Mapping function to convert slant to vertical TEC.
+
+    Parameters
+    ----------
+    elevation : np.ndarray
+        _description_
+    h_ipp : float
+        _description_
+
+    Returns
+    -------
+    np.ndarray
+        _description_
+    """
     return 1.0 / np.cos(
         np.arcsin((6371 / (6371 + h_ipp / 1000)) * np.sin(np.radians(90 - elevation)))
     )
 
 
-def _preprocessing(df_: pl.DataFrame, rec_pos, h_ipp: float = 350_000) -> pl.DataFrame:
-    year = df_["epoch"][0].year
+def _preprocessing(df: pl.DataFrame, rec_pos, h_ipp: float = 350_000) -> pl.DataFrame:
+    year = df["epoch"][0].year
 
     modip_ipp = extract_modip(
-        coords=(df_["lon_ipp"].to_numpy(), df_["lat_ipp"].to_numpy()),
+        coords=(df["lon_ipp"].to_numpy(), df["lat_ipp"].to_numpy()),
         year=year,
         coord_type="geo",
     )
     modip_rec = extract_modip(coords=rec_pos, year=year, coord_type="ecef")[0]
     _, lon_rec, _ = ecef2geodetic(*rec_pos)
 
-    mapping = _mapping_function(df_["ele"].to_numpy(), h_ipp)
-    gflc_vert = df_["gflc_levelled"].to_numpy() * mapping
+    mapping = _mapping_function(df["ele"].to_numpy(), h_ipp)
+    gflc_vert = df["gflc_levelled"].to_numpy() * mapping
 
-    return df_.with_columns(
+    return df.with_columns(
         [
             pl.Series("mapping", mapping),
             pl.Series("gflc_vert", gflc_vert),
@@ -178,52 +193,98 @@ def _combine_interval_systems(interval_results: list, all_arcs: list, nmax: int 
 
 
 def _solve_final_system(global_bias_matrix: np.ndarray, global_obs_vector: np.ndarray):
-    if global_bias_matrix.size == 0:
-        raise ValueError("Sistema vuoto - nessuna equazione valida")
+    """
+    Solve the combined system for the biases using QR decomposition.
 
-    # Combina matrici (equivalente MATLAB: BB_CC = [BB, CC])
+    Parameters
+    ----------
+    global_bias_matrix : np.ndarray
+        _description_
+    global_obs_vector : np.ndarray
+        _description_
+
+    Returns
+    -------
+    _type_
+        _description_
+
+    Raises
+    ------
+    ValueError
+        _description_
+    ValueError
+        _description_
+    ValueError
+        _description_
+    """
+    if global_bias_matrix.size == 0:
+        raise ValueError("Empty system - no valid equations")
+
+    # Combine matrices
     final_system = np.column_stack([global_bias_matrix, global_obs_vector])
 
-    # QR finale (equivalente MATLAB: [~, r_BC] = qr(BB_CC))
+    # Final QR decomposition
     R_final = qr(final_system, mode="r")
     R_final = _ensure_R(R_final)
 
-    # Trova sistema risolvibile (equivalente MATLAB: UR_BC = find(r_BC(:, end), 1, 'last'))
+    # Find solvable system
     last_nonzero = np.where(R_final[:, -1] != 0)[0]
     if len(last_nonzero) == 0:
-        raise ValueError("Sistema finale degenere")
+        raise ValueError("The final system is degenerate - no valid equations")
     UR_BC = last_nonzero[-1] + 1
 
     if UR_BC <= 1:
-        raise ValueError("Sistema finale sotto-determinato")
+        raise ValueError("The final system is under-determined - not enough equations")
 
-    # Estrai e risolvi (equivalente MATLAB: offset = RRBC \ bb)
+    # Extract and solve
     RRBC = R_final[: UR_BC - 1, : UR_BC - 1]
     bb = R_final[: UR_BC - 1, -1]
 
     offsets = np.linalg.lstsq(RRBC, bb, rcond=None)[0]
 
-    print(f"✅ Sistema risolto: {len(offsets)} offset stimati")
+    print(f"✅ System solved: {len(offsets)} offest have been estimated")
     return offsets
 
 
-def calibration_qr(df_preprocessed: pl.DataFrame, nmax: int = 3, interval: int = 30):
-    times = df_preprocessed["epoch"].unique().sort()
-    interval_results = []
-    # Manteniamo una lista ordinata di archi + set per check di esistenza rapido
-    all_arcs = []
-    _seen_arcs = set()
+def calibration_qr(
+    df_preprocessed: pl.DataFrame, nmax: int = 3, n_epochs: int = 30
+) -> tuple[dict[str, float], list[dict]]:
+    """
+    Perform GNSS-derived TEC calibration using QR decomposition to estimate
+    instrumental offsets for each satellite-receiver arc.
 
-    # 2. PROCESSAMENTO INTERVALLI - Batch processing
-    for interval_idx, start_idx in enumerate(range(0, len(times), interval)):
-        end_idx = min(start_idx + interval, len(times))
-        interval_epochs = times[start_idx:end_idx]
-        interval_data = df_preprocessed.filter(pl.col("epoch").is_in(interval_epochs))
+    This function implements a divide-and-conquer approach where data is processed
+    in temporal intervals, then combined to solve for arc-specific biases while
+    modeling ionospheric variations with polynomial functions.
+
+    Parameters
+    ----------
+    df_preprocessed : pl.DataFrame
+        Preprocessed DataFrame containing GNSS observations
+    nmax : int, optional
+        Maximum degree for polynomial expansion of ionospheric model, by default 3
+    n_epochs : int, optional
+        Number of epochs for processing batches, by default 30
+
+    Returns
+    -------
+    Tuple[Dict[str, float], List[Dict]]
+        - arc_to_offset: Dictionary mapping arc_id to estimated bias
+        - interval_results: List of intermediate results for each time interval
+    """
+    times = df_preprocessed["epoch"].unique().sort()
+    interval_results: list[dict] = []
+    all_arcs: list[str] = []
+    _seen_arcs: set = set()
+
+    for start_idx in range(0, len(times), n_epochs):
+        end_idx = min(start_idx + n_epochs, len(times))
+        selected_epochs = times[start_idx:end_idx]
+        interval_data = df_preprocessed.filter(pl.col("epoch").is_in(selected_epochs))
 
         if interval_data.is_empty():
             continue
 
-        # 3. RAGGRUPPAMENTO PER ARCO
         arcs_summary = (
             interval_data.group_by("id_arc_valid")
             .agg(
@@ -248,68 +309,56 @@ def calibration_qr(df_preprocessed: pl.DataFrame, nmax: int = 3, interval: int =
         if arcs_summary.is_empty():
             continue
 
-        # 4. CALCOLO POLINOMIALE - Batch
-        arc_data = arcs_summary.to_dicts()
-        arc_ids = [arc["id_arc_valid"] for arc in arc_data]
+        arc_ids = arcs_summary["id_arc_valid"].to_list()
+        modip_ipp = arcs_summary["modip_ipp"].to_numpy()
+        modip_rec = arcs_summary["modip_rec"].to_numpy()
+        lon_ipp = arcs_summary["lon_ipp"].to_numpy()
+        lon_rec = arcs_summary["lon_rec"].to_numpy()
+        mapping_funcs = arcs_summary["mapping"].to_numpy()
+        observations = arcs_summary["gflc_vert"].to_numpy()
 
-        # Prepara arrays per calcolo vettoriale
-        modip_ipp = np.array([arc["modip_ipp"] for arc in arc_data])
-        modip_rec = np.array([arc["modip_rec"] for arc in arc_data])
-        lon_ipp = np.array([arc["lon_ipp"] for arc in arc_data])
-        lon_rec = np.array([arc["lon_rec"] for arc in arc_data])
-        mapping_funcs = np.array([arc["mapping"] for arc in arc_data])
-        observations = np.array([arc["gflc_vert"] for arc in arc_data])
-
-        # Calcolo polinomiale batch
         poly_matrix = polynomial_expansion(modip_ipp, modip_rec, lon_ipp, lon_rec, nmax)
 
-        # 5. COSTRUZIONE SISTEMA
+        # Bias matrix: one-hot encoding of arcs
         n_arcs = len(arc_ids)
-        n_obs = len(arc_data)
-
-        # Matrice bias: one-hot encoding degli archi
+        n_obs = arcs_summary.height
         bias_matrix = np.zeros((n_obs, n_arcs))
         arc_to_idx = {arc_id: i for i, arc_id in enumerate(arc_ids)}
 
         for i, arc_id in enumerate(arc_ids):
             bias_matrix[i, arc_to_idx[arc_id]] = mapping_funcs[i]
 
-        # Sistema combinato
+        # Combined system: [Poly terms | Bias terms | Observations]
         system_matrix = np.column_stack(
             [poly_matrix, bias_matrix, observations.reshape(-1, 1)]
         )
 
-        # 6. FATTORIZZAZIONE QR
+        # QR decomposition
         R = qr(system_matrix, mode="r")
         R = _ensure_R(R)
         if R is None or not isinstance(R, np.ndarray):
-            print(f"❌ Intervallo {interval_idx}: impossibile ottenere R, skip")
+            # print(f"❌ Intervallo {interval_idx}: impossibile ottenere R, skip")
             continue
 
-        # 7. ACCUMULA RISULTATI
         interval_results.append(
             {"R_matrix": R, "arcs": arc_ids, "n_poly_terms": poly_matrix.shape[1]}
         )
 
-        # aggiorna all_arcs mantenendo ordine e unicità
         for arc in arc_ids:
             if arc not in _seen_arcs:
                 all_arcs.append(arc)
                 _seen_arcs.add(arc)
 
-        print(f"✅ Intervallo {interval_idx}: {len(arc_ids)} archi processati")
+        # print(f"✅ Intervallo {interval_idx}: {len(arc_ids)} archi processati")
 
-    # 8. COMBINAZIONE FINALE
-    print("🔗 Combinando tutti gli intervalli...")
+    # print("🔗 Combinando tutti gli intervalli...")
     global_bias_matrix, global_obs_vector = _combine_interval_systems(
         interval_results, all_arcs, nmax
     )
 
-    print("🧮 Risolvendo sistema finale...")
+    # print("🧮 Risolvendo sistema finale...")
     offsets = _solve_final_system(global_bias_matrix, global_obs_vector)
+    arc_to_offset = dict(zip(all_arcs, offsets))
 
-    # Crea dizionario arc_id -> offset
-    arc_to_offset = {arc_id: offset for arc_id, offset in zip(all_arcs, offsets)}
-
-    print(f"🎯 Calibrazione completata: {len(offsets)} offset stimati")
+    # print(f"🎯 Calibrazione completata: {len(offsets)} offset stimati")
     return arc_to_offset, interval_results
