@@ -2,7 +2,7 @@ import numpy as np
 import polars as pl
 from scipy.linalg import qr
 
-from pytecgg.tec_calibration.constants import ALTITUDE_KM
+from pytecgg.tec_calibration.constants import ALTITUDE_M
 from pytecgg.tec_calibration.calibration_preprocessing import (
     _ensure_R,
     _preprocessing,
@@ -162,7 +162,7 @@ def estimate_bias(
     receiver_position: tuple[float, float, float],
     max_degree: int = 3,
     n_epochs: int = 30,
-    h_ipp: float = ALTITUDE_KM,
+    h_ipp: float = ALTITUDE_M,
 ) -> dict[str, float]:
     """
     Perform GNSS-derived TEC calibration using QR decomposition to estimate
