@@ -7,6 +7,7 @@ from pytecgg.tec_calibration.calibration_preprocessing import (
     _ensure_R,
     _preprocessing,
     _create_processing_batches,
+    _create_processing_batches_fix,
 )
 
 
@@ -203,5 +204,57 @@ def estimate_bias(
     # Solve for biases
     global_bias_matrix, global_obs_vector = _combine_interval_systems(batches, all_arcs)
     offsets = _solve_final_system(global_bias_matrix, global_obs_vector)
+
+    return dict(zip(all_arcs, offsets))
+
+
+### NEW by chatty ###
+
+
+def _combine_batches_correctly_fix(batches: list[dict], all_arcs: list[str]):
+    n_arcs_total = len(all_arcs)
+    global_rows = []
+    global_obs = []
+
+    arc_to_idx_global = {arc: i for i, arc in enumerate(all_arcs)}
+
+    for batch in batches:
+        bias_matrix_local = batch["bias_matrix"]
+        observations = batch["observations"]
+        arcs_local = batch["arcs"]
+
+        n_obs = bias_matrix_local.shape[0]
+        bias_matrix_global = np.zeros((n_obs, n_arcs_total))
+
+        for j, arc_id in enumerate(arcs_local):
+            col_idx_global = arc_to_idx_global[arc_id]
+            bias_matrix_global[:, col_idx_global] = bias_matrix_local[:, j]
+
+        global_rows.append(bias_matrix_global)
+        global_obs.append(observations)
+
+    global_bias_matrix = np.vstack(global_rows)
+    global_obs_vector = np.concatenate(global_obs)
+
+    return global_bias_matrix, global_obs_vector
+
+
+def estimate_bias_fix(
+    df: pl.DataFrame,
+    receiver_position: tuple[float, float, float],
+    max_degree: int = 3,
+    n_epochs: int = 30,
+    h_ipp: float = 350_000,
+) -> dict[str, float]:
+    df_processed = _preprocessing(df, receiver_position=receiver_position, h_ipp=h_ipp)
+    batches, all_arcs = _create_processing_batches_fix(
+        df_processed, n_epochs=n_epochs, max_degree=max_degree
+    )
+    global_bias_matrix, global_obs_vector = _combine_batches_correctly_fix(
+        batches, all_arcs
+    )
+    offsets, residuals, rank, s = np.linalg.lstsq(
+        global_bias_matrix, global_obs_vector, rcond=None
+    )
 
     return dict(zip(all_arcs, offsets))
