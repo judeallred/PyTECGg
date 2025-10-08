@@ -34,18 +34,6 @@ def _polynomial_expansion(
 def _mapping_function(elevation: np.ndarray, h_ipp: float) -> np.ndarray:
     """
     Mapping function to convert slant to vertical TEC.
-
-    Parameters
-    ----------
-    elevation : np.ndarray
-        _description_
-    h_ipp : float
-        _description_
-
-    Returns
-    -------
-    np.ndarray
-        _description_
     """
     return 1.0 / np.cos(
         np.arcsin(
@@ -70,7 +58,7 @@ def _preprocessing(
     _, lon_rec, _ = ecef2geodetic(*receiver_position)
 
     mapping = _mapping_function(df["ele"].to_numpy(), h_ipp)
-    gflc_vert = df["gflc_levelled"].to_numpy() * mapping
+    gflc_vert = df["gflc_levelled"].to_numpy() / mapping
 
     return df.with_columns(
         [
