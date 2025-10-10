@@ -258,15 +258,18 @@ def satellite_coordinates(
             )
 
             pos = _satellite_coordinates(ephem_dict, sv, gnss_system, epoch_dt)
-            # print(pos)
             if pos.size > 0:
                 x[i], y[i], z[i] = pos
         except Exception as e:
             print(f"Error processing {sv} at {epoch_dt}: {str(e)}")
             continue
 
-    return [
-        pl.lit(x).alias("sat_x"),
-        pl.lit(y).alias("sat_y"),
-        pl.lit(z).alias("sat_z"),
-    ]
+    return pl.DataFrame(
+        {
+            "sv": sv_arr,
+            "epoch": epochs,
+            "sat_x": x,
+            "sat_y": y,
+            "sat_z": z,
+        }
+    )
