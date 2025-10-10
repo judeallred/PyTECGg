@@ -35,10 +35,8 @@ def _mapping_function(elevation: np.ndarray, h_ipp: float) -> np.ndarray:
     """
     Mapping function to convert slant to vertical TEC.
     """
-    return 1.0 / np.cos(
-        np.arcsin(
-            (6_371 / (6_371 + h_ipp / 1_000)) * np.sin(np.radians(90 - elevation))
-        )
+    return np.cos(
+        np.arcsin((6_371 / (6_371 + h_ipp / 1_000)) * np.cos(np.radians(elevation)))
     )
 
 
@@ -58,7 +56,7 @@ def _preprocessing(
     _, lon_rec, _ = ecef2geodetic(*receiver_position)
 
     mapping = _mapping_function(df["ele"].to_numpy(), h_ipp)
-    gflc_vert = df["gflc_levelled"].to_numpy() / mapping
+    gflc_vert = df["gflc_levelled"].to_numpy() * mapping
 
     return df.with_columns(
         [
