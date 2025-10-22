@@ -146,28 +146,13 @@ def _gg_calibration(
     return biases, global_arcs_list
 
 
-def estimate_bias():
-    # _preprocessing()
-    # _gg_calibration()
-    pass
-
-
-# def estimate_bias_fix(
-#     df: pl.DataFrame,
-#     receiver_position: tuple[float, float, float],
-#     max_degree: int = 3,
-#     n_epochs: int = 30,
-#     h_ipp: float = ALTITUDE_M,
-# ) -> dict[str, float]:
-#     df_processed = _preprocessing(df, receiver_position=receiver_position, h_ipp=h_ipp)
-#     batches, all_arcs = _create_processing_batches_fix(
-#         df_processed, n_epochs=n_epochs, max_degree=max_degree
-#     )
-#     global_bias_matrix, global_obs_vector = _combine_batches_correctly_fix(
-#         batches, all_arcs
-#     )
-#     offsets, residuals, rank, s = np.linalg.lstsq(
-#         global_bias_matrix, global_obs_vector, rcond=None
-#     )
-
-#     return dict(zip(all_arcs, offsets))
+def estimate_bias(
+    df: pl.DataFrame,
+    receiver_position: tuple[float, float, float],
+    max_degree: int = 3,
+    n_epochs: int = 30,
+    h_ipp: float = ALTITUDE_M,
+):
+    df_clean = _preprocessing(df, receiver_position=receiver_position, h_ipp=h_ipp)
+    bias, id_arc = _gg_calibration(df_clean, interval=n_epochs, nmax=max_degree)
+    return bias, id_arc
