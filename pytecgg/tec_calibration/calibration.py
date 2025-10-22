@@ -4,257 +4,170 @@ from scipy.linalg import qr
 
 from pytecgg.tec_calibration.constants import ALTITUDE_M
 from pytecgg.tec_calibration.calibration_preprocessing import (
-    _ensure_R,
+    _polynomial_expansion,
     _preprocessing,
-    _create_processing_batches,
-    _create_processing_batches_fix,
 )
 
 
-def _combine_interval_systems(
-    interval_results: list[dict], all_arcs: list[str]
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Combine triangular matrices from all intervals.
-    """
-    if not interval_results:
-        raise ValueError("No data to combine")
+def _gg_calibration(
+    df_clean: pl.DataFrame,
+    interval: int = 30,
+    nmax: int = 3,
+):
+    # 1. Loop over batches of interval epochs
+    epoch_times = df_clean["epoch"].unique().sort()
+    qr_results_dict = {}
+    arc_lists_dict = {}
+    global_arcs_list = []
+    global_arc_idx_map = {}
 
-    # print(f"🔍 DEBUG: {len(interval_results)} intervalli da processare")
-    # print(f"🔍 DEBUG: {len(all_arcs)} archi totali")
+    # 2. Loop over epochs in the batch
+    num_epochs = len(epoch_times)
+    for batch_start_idx in range(0, num_epochs, interval):
+        batch_arcs_list = []
+        batch_arc_idx_map = {}
+        design_matrix_rows = []
+        observations = []
+        arc_columns = []
+        mapping_values = []
 
-    n_arcs_total = len(all_arcs)
+        batch_epoch_indices = range(
+            max(0, batch_start_idx - interval), min(batch_start_idx, num_epochs)
+        )
 
-    # Estimate of the number of equations that can be formed
-    total_equations_est = 0
-    for res_ in interval_results:
-        Rm = _ensure_R(res_["R_matrix"])
-        if Rm is None or not isinstance(Rm, np.ndarray):
-            continue
-        total_equations_est += max(0, Rm.shape[0] - res_["n_poly_terms"] - 1)
+        for epoch_idx in batch_epoch_indices:
+            current_time = epoch_times[epoch_idx]
+            epoch_data = df_clean.filter(pl.col("epoch") == current_time)
 
-    if total_equations_est == 0:
-        print("⚠️ No valid equations found in results")
-        return np.zeros((0, n_arcs_total)), np.zeros((0,))
+            if epoch_data.is_empty():
+                continue
 
-    global_bias_matrix = np.zeros((total_equations_est, n_arcs_total))
-    global_obs_vector = np.zeros(total_equations_est)
+            valid_arcs = (
+                epoch_data.filter(pl.col("id_arc_valid").is_not_null())["id_arc_valid"]
+                .unique(maintain_order=True)
+                .to_list()
+            )
 
-    equation_counter = 0
+            for arc_id in valid_arcs:
+                arc_data = epoch_data.filter(pl.col("id_arc_valid") == arc_id)
 
-    for res_ in interval_results:
-        R_matrix = res_["R_matrix"]
+                if arc_data.is_empty():
+                    continue
 
-        # print(f"🔍 DEBUG Intervallo {interval_idx}:")
-        # print(f"   R_matrix type: {type(R_matrix)}")
+                mapping = arc_data["mapping"][0]
+                obs_val = arc_data["gflc_vert"][0]
 
-        R_matrix = _ensure_R(R_matrix)
-        if R_matrix is None or not isinstance(R_matrix, np.ndarray):
-            # print(f"   ❌ Impossibile estrarre R, skippo intervallo {interval_idx}")
-            continue
-        # print(f"   ✅ R_matrix normalizzata, shape: {getattr(R_matrix, 'shape', None)}")
+                polynomial_terms = _polynomial_expansion(
+                    arc_data["modip_ipp"].to_numpy(),
+                    arc_data["modip_rec"].to_numpy(),
+                    arc_data["lon_ipp"].to_numpy(),
+                    arc_data["lon_rec"].to_numpy(),
+                    nmax,
+                )
 
-        arc_list = res_["arcs"]
-        n_poly_terms_local = res_["n_poly_terms"]
-        # print(f"   n_poly_terms_local: {n_poly_terms_local}")
-        # print(f"   arc_list: {len(arc_list)} archi")
+                design_matrix_rows.append(polynomial_terms)
 
-        if R_matrix.ndim != 2:
-            # print(f"   ⚠️ R_matrix non 2D, skippo")
-            continue
+                # Batch arcs
+                if arc_id not in batch_arc_idx_map:
+                    batch_arc_idx_map[arc_id] = len(batch_arcs_list)
+                    batch_arcs_list.append(arc_id)
 
-        last_nonzero_row = np.where(R_matrix[:, -1] != 0)[0]
-        # print(f"   last_nonzero_row: {last_nonzero_row}")
+                # Global arcs
+                if arc_id not in global_arc_idx_map:
+                    global_arc_idx_map[arc_id] = len(global_arcs_list)
+                    global_arcs_list.append(arc_id)
 
-        if len(last_nonzero_row) == 0:
-            # print(f"   ⚠️  Nessuna riga non-zero")
-            continue
+                arc_columns.append(batch_arc_idx_map[arc_id])
+                mapping_values.append(mapping)
+                observations.append(obs_val)
 
-        UR = last_nonzero_row[-1] + 1
-        # print(f"   UR: {UR}")
-
-        if UR <= n_poly_terms_local:
-            # print(f"   ⚠️  UR ({UR}) <= n_poly_terms ({n_poly_terms_local})")
-            continue
-
-        # Extract submatrix for biases + observations
-        RR = R_matrix[n_poly_terms_local:UR, n_poly_terms_local:]
-        # print(f"   RR shape: {RR.shape}")
-
-        last_nonzero_rr = np.where(RR[:, -1] != 0)[0]
-        # print(f"   last_nonzero_rr: {last_nonzero_rr}")
-
-        if len(last_nonzero_rr) == 0:
-            # print(f"   ⚠️  RR nessuna riga non-zero")
+        if not design_matrix_rows:
             continue
 
-        URR = last_nonzero_rr[-1] + 1
-        # print(f"   URR: {URR}")
+        design_matrix = np.vstack(design_matrix_rows)
+        observation_vector = np.array(observations).reshape(-1, 1)
 
-        if URR <= 1:
-            # print(f"   ⚠️  URR ({URR}) <= 1")
-            continue
+        num_arcs_in_batch = len(batch_arcs_list)
+        num_observations = len(observations)
+        beta_matrix = np.zeros((num_observations, num_arcs_in_batch))
 
-        # print(f"   ✅ Aggiungo {URR-1} equazioni")
+        for i, arc_col_idx in enumerate(arc_columns):
+            beta_matrix[i, arc_col_idx] = mapping_values[i]
 
-        # Reconstruct equations
-        for row_idx in range(URR - 1):
-            if equation_counter >= global_obs_vector.shape[0]:
-                # print("   ⚠️ superato spazio allocato, interrompo l'aggiunta")
-                break
+        full_matrix = np.hstack([design_matrix, beta_matrix, observation_vector])
+        _, R_matrix = qr(full_matrix, mode="full")
 
-            global_obs_vector[equation_counter] = RR[row_idx, URR - 1]
+        qr_results_dict[str(batch_start_idx)] = R_matrix
+        arc_lists_dict[str(batch_start_idx)] = batch_arcs_list
 
-            for col_idx in range(row_idx, URR - 1):
-                arc_id = arc_list[col_idx]
-                if arc_id in all_arcs:
-                    arc_position = all_arcs.index(arc_id)
-                    global_bias_matrix[equation_counter, arc_position] = RR[
-                        row_idx, col_idx
-                    ]
+    num_global_arcs = len(global_arcs_list)
+    num_coefficients = nmax + 2
 
-            equation_counter += 1
+    total_rows = sum(len(arcs) for arcs in arc_lists_dict.values())
+    design_matrix_global = np.zeros((total_rows, num_global_arcs))
+    observation_vector_global = np.zeros(total_rows)
 
-    global_bias_matrix = global_bias_matrix[:equation_counter, :]
-    global_obs_vector = global_obs_vector[:equation_counter]
+    current_row = 0
 
-    # print(f"🔗 Combinazione completata: {equation_counter} equazioni")
-    return global_bias_matrix, global_obs_vector
+    for batch_key, R_matrix in qr_results_dict.items():
+        batch_arcs = arc_lists_dict[batch_key]
 
+        total_cols = R_matrix.shape[1]
+        relevant_block = R_matrix[num_coefficients:total_cols, num_coefficients:]
 
-def _solve_final_system(
-    global_bias_matrix: np.ndarray, global_obs_vector: np.ndarray
-) -> np.ndarray:
-    """
-    Solve the combined system for the biases using QR decomposition.
-    """
-    if global_bias_matrix.size == 0:
-        raise ValueError("Empty system - no valid equations")
+        num_block_rows, num_block_cols = relevant_block.shape
 
-    # Combine matrices
-    final_system = np.column_stack([global_bias_matrix, global_obs_vector])
+        for row_idx in range(num_block_rows - 1):
+            observation_vector_global[current_row] = relevant_block[
+                row_idx, num_block_cols - 1
+            ]
 
-    # Final QR decomposition
-    R_final = qr(final_system, mode="r")
-    R_final = _ensure_R(R_final)
+            for col_idx in range(row_idx, num_block_cols - 1):
+                arc_id = batch_arcs[col_idx]
+                global_idx = global_arc_idx_map[arc_id]
+                design_matrix_global[current_row, global_idx] = relevant_block[
+                    row_idx, col_idx
+                ]
 
-    # Find solvable system
-    last_nonzero = np.where(R_final[:, -1] != 0)[0]
-    if len(last_nonzero) == 0:
-        raise ValueError("The final system is degenerate - no valid equations")
-    UR_BC = last_nonzero[-1] + 1
+            current_row += 1
 
-    if UR_BC <= 1:
-        raise ValueError("The final system is under-determined - not enough equations")
-
-    # Extract and solve
-    RRBC = R_final[: UR_BC - 1, : UR_BC - 1]
-    bb = R_final[: UR_BC - 1, -1]
-
-    offsets = np.linalg.lstsq(RRBC, bb, rcond=None)[0]
-
-    print(f"✅ System solved: {len(offsets)} offest have been estimated")
-    return offsets
-
-
-def estimate_bias(
-    df: pl.DataFrame,
-    receiver_position: tuple[float, float, float],
-    max_degree: int = 3,
-    n_epochs: int = 30,
-    h_ipp: float = ALTITUDE_M,
-) -> dict[str, float]:
-    """
-    Perform GNSS-derived TEC calibration using QR decomposition to estimate
-    instrumental offsets for each satellite-receiver arc.
-
-    This function implements a divide-and-conquer approach where data is processed
-    in temporal intervals, then combined to solve for arc-specific biases while
-    modeling ionospheric variations with polynomial functions.
-
-    Parameters
-    ----------
-    df : pl.DataFrame
-        DataFrame containing GNSS observations with required columns:
-        - epoch: observation timestamps
-        - id_arc_valid: unique arc identifier
-        - ele: satellite elevation angles
-        - gflc_levelled: geometry-free linear combination observations #FIXME qui potremmo usare un campo fra gflc di fase e quello livellato, lasciando alla funzione usare il primo che trova
-        - lat_ipp: latitude at IPP
-        - lon_ipp: longitude at IPP
-    receiver_position : tuple[float, float, float]
-        ECEF coordinates of the receiver station (x, y, z) in meters
-    max_degree : int, optional
-        Maximum degree for polynomial expansion of ionospheric model, by default 3
-    n_epochs : int, optional
-        Number of epochs to process in each batch, by default 30
-    h_ipp : float, optional
-        Height of Ionospheric Pierce Point in meters, by default 350_000 (350 km)
-
-    Returns
-    -------
-    dict[str, float]
-        Dictionary mapping arc_id to estimated bias values
-    """
-    # Batch processing
-    df_processed = _preprocessing(df, receiver_position=receiver_position, h_ipp=h_ipp)
-    batches, all_arcs = _create_processing_batches(
-        df_processed, n_epochs=n_epochs, max_degree=max_degree
-    )
-    # Solve for biases
-    global_bias_matrix, global_obs_vector = _combine_interval_systems(batches, all_arcs)
-    offsets = _solve_final_system(global_bias_matrix, global_obs_vector)
-
-    return dict(zip(all_arcs, offsets))
-
-
-### NEW by chatty ###
-
-
-def _combine_batches_correctly_fix(batches: list[dict], all_arcs: list[str]):
-    n_arcs_total = len(all_arcs)
-    global_rows = []
-    global_obs = []
-
-    arc_to_idx_global = {arc: i for i, arc in enumerate(all_arcs)}
-
-    for batch in batches:
-        bias_matrix_local = batch["bias_matrix"]
-        observations = batch["observations"]
-        arcs_local = batch["arcs"]
-
-        n_obs = bias_matrix_local.shape[0]
-        bias_matrix_global = np.zeros((n_obs, n_arcs_total))
-
-        for j, arc_id in enumerate(arcs_local):
-            col_idx_global = arc_to_idx_global[arc_id]
-            bias_matrix_global[:, col_idx_global] = bias_matrix_local[:, j]
-
-        global_rows.append(bias_matrix_global)
-        global_obs.append(observations)
-
-    global_bias_matrix = np.vstack(global_rows)
-    global_obs_vector = np.concatenate(global_obs)
-
-    return global_bias_matrix, global_obs_vector
-
-
-def estimate_bias_fix(
-    df: pl.DataFrame,
-    receiver_position: tuple[float, float, float],
-    max_degree: int = 3,
-    n_epochs: int = 30,
-    h_ipp: float = ALTITUDE_M,
-) -> dict[str, float]:
-    df_processed = _preprocessing(df, receiver_position=receiver_position, h_ipp=h_ipp)
-    batches, all_arcs = _create_processing_batches_fix(
-        df_processed, n_epochs=n_epochs, max_degree=max_degree
-    )
-    global_bias_matrix, global_obs_vector = _combine_batches_correctly_fix(
-        batches, all_arcs
-    )
-    offsets, residuals, rank, s = np.linalg.lstsq(
-        global_bias_matrix, global_obs_vector, rcond=None
+    final_augmented = np.hstack(
+        [design_matrix_global, observation_vector_global.reshape(-1, 1)]
     )
 
-    return dict(zip(all_arcs, offsets))
+    _, final_R = qr(final_augmented, mode="full")
+
+    num_final_eqs = final_R.shape[1] - 1
+    triangular_system = final_R[:num_final_eqs, :-1]
+    rhs_vector = final_R[:num_final_eqs, -1]
+
+    biases = np.linalg.solve(triangular_system, rhs_vector)
+
+    return biases, global_arcs_list
+
+
+def estimate_bias():
+    # _preprocessing()
+    # _gg_calibration()
+    pass
+
+
+# def estimate_bias_fix(
+#     df: pl.DataFrame,
+#     receiver_position: tuple[float, float, float],
+#     max_degree: int = 3,
+#     n_epochs: int = 30,
+#     h_ipp: float = ALTITUDE_M,
+# ) -> dict[str, float]:
+#     df_processed = _preprocessing(df, receiver_position=receiver_position, h_ipp=h_ipp)
+#     batches, all_arcs = _create_processing_batches_fix(
+#         df_processed, n_epochs=n_epochs, max_degree=max_degree
+#     )
+#     global_bias_matrix, global_obs_vector = _combine_batches_correctly_fix(
+#         batches, all_arcs
+#     )
+#     offsets, residuals, rank, s = np.linalg.lstsq(
+#         global_bias_matrix, global_obs_vector, rcond=None
+#     )
+
+#     return dict(zip(all_arcs, offsets))
