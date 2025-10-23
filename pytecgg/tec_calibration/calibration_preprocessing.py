@@ -12,6 +12,30 @@ def _polynomial_expansion(
     lon_rec: np.ndarray,
     max_degree: int,
 ) -> np.ndarray:
+    """
+    Compute polynomial expansion terms for TEC modeling.
+
+    The expansion combines differences in longitude and modified dip latitude (MoDip)
+    between ionospheric pierce point (IPP) and receiver location.
+
+    Parameters
+    ----------
+    modip_ipp : np.ndarray
+        MoDip values at IPP
+    modip_rec : np.ndarray
+        MoDip values at the receiver position
+    lon_ipp : np.ndarray
+        Longitudes of IPP [degrees]
+    lon_rec : np.ndarray
+        Longitudes of the receiver position [degrees]
+    max_degree : int
+        Maximum polynomial degree for MoDip terms
+
+    Returns
+    -------
+    np.ndarray
+        Matrix of polynomial expansion terms with shape (n_points, 2 + max_degree)
+    """
     delta_lon = lon_ipp - lon_rec
     delta_modip = modip_ipp - modip_rec
     const_norm = 1.0 / (1.0 + np.abs(delta_modip) ** (max_degree + 1))
@@ -32,7 +56,18 @@ def _polynomial_expansion(
 
 def _mapping_function(elevation: np.ndarray, h_ipp: float) -> np.ndarray:
     """
-    Mapping function to convert slant to vertical TEC.
+    Compute the mapping function to convert slant to vertical TEC.
+
+    Parameters
+    ----------
+    elevation : np.ndarray
+        Satellite elevation angles [degrees]
+    h_ipp : float
+        Height of IPP [km]
+
+    Returns
+    -------
+    np.ndarray
     """
     return np.cos(
         np.arcsin((6_371 / (6_371 + h_ipp / 1_000)) * np.cos(np.radians(elevation)))
@@ -44,6 +79,32 @@ def _preprocessing(
     receiver_position: tuple[float, float, float],
     h_ipp: float,
 ) -> pl.DataFrame:
+    """
+    Preprocess GNSS data for TEC modeling. Adds mapping function, vTEC, and
+    MoDip parameters for both IPP and receiver positions.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Input DataFrame with columns:
+        - epoch: observation timestamps
+        - ele: satellite elevation [degrees]
+        - lon_ipp, lat_ipp: IPP coordinates [degrees]
+        - gflc_levelled: levelled GFLC values
+    receiver_position : tuple[float, float, float]
+        Receiver position in ECEF coordinates (x, y, z) [meters].
+    h_ipp : float
+        Height of the ionospheric pierce point [m].
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with additional columns:
+        - mapping: mapping function values
+        - gflc_vert: vTEC estimates
+        - modip_ipp, modip_rec: MoDip values (IPP and receiver)
+        - lon_rec: receiver longitude [degrees]
+    """
     year = df["epoch"][0].year
 
     modip_ipp = extract_modip(

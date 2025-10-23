@@ -12,8 +12,33 @@ from pytecgg.tec_calibration.calibration_preprocessing import (
 def _gg_calibration(
     df_clean: pl.DataFrame,
     interval: int = 30,
-    nmax: int = 3,
-):
+    max_degree: int = 3,
+) -> dict[str, float]:
+    """
+    Calibrate GNSS arcs using polynomial expansion and batch QR decomposition.
+
+    The function processes batches of epochs, computes polynomial terms, and solves
+    for arc-level biases using a QR approach.
+
+    Parameters
+    ----------
+    df_clean : pl.DataFrame
+        Preprocessed DataFrame containing:
+        - gflc_vert: vertical TEC observations
+        - mapping: mapping function values
+        - modip_ipp, modip_rec: MoDip parameters
+        - lon_ipp, lon_rec: longitudes
+        - id_arc_valid: validated arc identifiers
+    interval : int, optional
+        Number of epochs per batch for calibration. Default is 30.
+    max_degree : int, optional
+        Maximum degree of the polynomial expansion. Default is 3.
+
+    Returns
+    -------
+    dict[str, float]
+        Dictionary mapping arc identifiers to estimated biases.
+    """
     # 1. Loop over batches of interval epochs
     epoch_times = df_clean["epoch"].unique().sort()
     qr_results_dict = {}
@@ -62,7 +87,7 @@ def _gg_calibration(
                     arc_data["modip_rec"].to_numpy(),
                     arc_data["lon_ipp"].to_numpy(),
                     arc_data["lon_rec"].to_numpy(),
-                    nmax,
+                    max_degree,
                 )
 
                 design_matrix_rows.append(polynomial_terms)
@@ -101,7 +126,7 @@ def _gg_calibration(
         arc_lists_dict[str(batch_start_idx)] = batch_arcs_list
 
     num_global_arcs = len(global_arcs_list)
-    num_coefficients = nmax + 2
+    num_coefficients = max_degree + 2
 
     total_rows = sum(len(arcs) for arcs in arc_lists_dict.values())
     design_matrix_global = np.zeros((total_rows, num_global_arcs))
@@ -143,7 +168,7 @@ def _gg_calibration(
 
     biases = np.linalg.solve(triangular_system, rhs_vector)
 
-    return biases, global_arcs_list
+    return {arc_id: bias for arc_id, bias in zip(global_arcs_list, biases)}
 
 
 def estimate_bias(
@@ -152,7 +177,29 @@ def estimate_bias(
     max_degree: int = 3,
     n_epochs: int = 30,
     h_ipp: float = ALTITUDE_M,
-):
+) -> dict[str, float]:
+    """
+    Estimate arc-level TEC biases. The function preprocesses the data, computes vTEC,
+    mapping function and MoDip parameters, then applies a calibration procedure to
+    estimate biases per arc.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Input DataFrame with GNSS observations.
+    receiver_position : tuple[float, float, float]
+        Receiver position in ECEF coordinates (x, y, z) [meters].
+    max_degree : int, optional
+        Maximum degree of polynomial expansion. Default is 3.
+    n_epochs : int, optional
+        Number of epochs per batch for calibration. Default is 30.
+    h_ipp : float, optional
+        Height of the IPP [m]. Default is 350_000.
+
+    Returns
+    -------
+    dict[str, float]
+        Dictionary mapping arc identifiers to estimated biases.
+    """
     df_clean = _preprocessing(df, receiver_position=receiver_position, h_ipp=h_ipp)
-    bias, id_arc = _gg_calibration(df_clean, interval=n_epochs, nmax=max_degree)
-    return bias, id_arc
+    return _gg_calibration(df_clean, interval=n_epochs, max_degree=max_degree)
