@@ -36,6 +36,7 @@ def _add_arc_id(
     """
     _id_arc = pl.col("is_loss_of_lock").cum_sum().over("sv") + 1
     _arc_length = pl.col("gflc_code").is_not_null().sum().over(["sv", _id_arc])
+    _id_arc = _id_arc.cast(pl.Int64).cast(pl.Utf8).str.zfill(3)
 
     if receiver_acronym:
         id_arc = pl.format(
