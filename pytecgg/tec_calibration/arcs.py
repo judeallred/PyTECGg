@@ -34,7 +34,7 @@ def _add_arc_id(
         - id_arc: Arc identifier
         - id_arc_valid: Valid arc identifier (None for arcs shorter than `min_arc_length`)
     """
-    _id_arc = pl.col("is_loss_of_lock").cum_sum().over("sv")
+    _id_arc = pl.col("is_loss_of_lock").cum_sum().over("sv") + 1
     _arc_length = pl.col("gflc_code").is_not_null().sum().over(["sv", _id_arc])
 
     if receiver_acronym:
