@@ -45,7 +45,8 @@ def _calculate_modip_grid(year: int, altitude_km: float = ALTITUDE_KM) -> np.nda
 
     # MoDip (Modified Dip Latitude)
     lat_rad = np.deg2rad(lat_grid)
-    modip = np.rad2deg(np.arctan(inclination_rad / np.sqrt(np.cos(lat_rad))))
+    # modip = np.rad2deg(np.arctan(inclination_rad / np.sqrt(np.cos(lat_rad))))
+    modip = np.arctan(inclination_rad / np.sqrt(np.cos(lat_rad)))
 
     # At the poles, cos(latitude) approaches zero
     modip = _polar_nan_values(modip, lat_grid)
