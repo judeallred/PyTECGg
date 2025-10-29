@@ -1,15 +1,37 @@
 import polars as pl
 from typing import Optional, Literal
 
-from .constants import OBS_MAPPING, FREQ_BANDS
+from .constants import OBS_MAPPING_BY_VERSION, FREQ_BANDS
 from .gflc import _calculate_gflc_code, _calculate_gflc_phase
 from .iflc import _calculate_iflc_code, _calculate_iflc_phase
 from .mw import _calculate_melbourne_wubbena
 
 
+def _map_obs_by_version(rinex_version: str) -> dict:
+    """
+    Map RINEX version to observation mapping
+
+    Parameters:
+        rinex_version (str): RINEX version string (e.g., '2.11', '3.04')
+
+    Returns:
+        dict: Observation mapping for the specified version
+    """
+    v_ = rinex_version.split(".")
+    major_version = v_[0]
+
+    if major_version not in OBS_MAPPING_BY_VERSION:
+        raise ValueError(
+            f"Unsupported RINEX version: {rinex_version}. "
+            f"Supported major versions: {list(OBS_MAPPING_BY_VERSION.keys())}"
+        )
+    return OBS_MAPPING_BY_VERSION[major_version]
+
+
 def calculate_linear_combinations(
     obs_data: pl.DataFrame,
     system: Literal["G", "E", "C", "R"],
+    rinex_version: str,
     combinations: list[
         Literal["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]
     ] = ["gflc_phase", "gflc_code", "mw"],
@@ -21,6 +43,7 @@ def calculate_linear_combinations(
     Parameters:
         obs_data (pl.DataFrame): DataFrame containing observation data
         system (Literal["G", "E", "C", "R"]): GNSS system identifier
+        rinex_version (str): RINEX version string (e.g., '2.11', '3.04')
         combinations (list[Literal["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]]):
             List of combinations to calculate. Options:
                 - "gflc_phase": Geometry-Free Linear Combination (Phase)
@@ -34,9 +57,12 @@ def calculate_linear_combinations(
     Returns:
         pl.DataFrame: DataFrame with the requested linear combinations
     """
+    # Get the appropriate mapping for the RINEX version
+    obs_mapping = _map_obs_by_version(rinex_version)
+
     # Get phase and code mappings
-    phase_mapping = OBS_MAPPING[system]["phase"]
-    code_mapping = OBS_MAPPING[system]["code"]
+    phase_mapping = obs_mapping[system]["phase"]
+    code_mapping = obs_mapping[system]["code"]
 
     # Get observation keys
     phase_keys = list(phase_mapping.keys())  # e.g. ["L1", "L2"]

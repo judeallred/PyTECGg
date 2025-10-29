@@ -29,12 +29,12 @@ This package:
 - supports RINEX V2-3-4
 - provides seamless decompression for RINEX files
 
+👉 [**Contributing to PyTECGg**](./CONTRIBUTING.md)
+
 | ![Earth's ionosphere and GNSS satellites](images/project_cover.webp) |
 |:--:| 
 | *Generated image of Earth's ionosphere with GNSS satellites studying TEC* |
 
-
-👉 [**Contributing to PyTECGg**](./CONTRIBUTING.md)
 
 
 ## Installation
@@ -77,7 +77,7 @@ nav_dict = read_rinex_nav(NAV_PATH)
 # - a DataFrame of observations,
 # - the receiver's approximate position in ECEF,
 # - the RINEX version string.
-df_obs, rec_pos, version = read_rinex_obs(OBS_PATH)
+df_obs, rec_pos, rinex_version = read_rinex_obs(OBS_PATH)
 rec_name = OBS_PATH.split("/")[-1][:4].lower()
 ```
 
@@ -115,6 +115,7 @@ df_lc = calculate_linear_combinations(
     df_obs,
     system="E",
     combinations=["gflc_phase", "gflc_code", "mw"],
+    rinex_version=rinex_version,    
 )
 ```
 
@@ -160,19 +161,19 @@ In particular, CSs are flagged when abrupt changes in the MW combination exceed 
 
 ### Satellite coordinates and Ionospheric Pierce Point (IPP) 🛰️
 
-To get the satellite's position in space, we can compute ECEF coordinates for each satellite–epoch and add them as columns to an existing Polars DataFrame:
+To get the satellite's position in space, we can compute ECEF coordinates for each satellite–epoch:
 
 ```python
 from pytecgg.satellites import satellite_coordinates
 
-df_lc_pos = df_lc.with_columns(
-    *satellite_coordinates(
-        sv_ids=df_lc["sv"],
-        epochs=df_lc["epoch"],
-        ephem_dict=ephem_dict,
-        gnss_system="Galileo",
-    )
+df_coords = satellite_coordinates(
+    sv_ids=df_lc["sv"],
+    epochs=df_lc["epoch"],
+    ephem_dict=ephem_dict,
+    gnss_system="Galileo",
 )
+
+df_ = df_arcs.join(df_coords, on=["sv", "epoch"], how="left")
 ```
 
 We can then compute the IPP — the intersection between the satellite–receiver line of sight and a thin-shell ionosphere at a fixed altitude:
@@ -181,7 +182,7 @@ We can then compute the IPP — the intersection between the satellite–receive
 from pytecgg.satellites import calculate_ipp
 
 # Extract satellite positions as a NumPy array
-sat_ecef_array = df_lc_pos.select(["sat_x", "sat_y", "sat_z"]).to_numpy()
+sat_ecef_array = df_.select(["sat_x", "sat_y", "sat_z"]).to_numpy()
 
 # Compute IPP latitude and longitude, azimuth and elevation angle from
 # receiver to satellite, assuming a fixed ionospheric shell height of 350 km
@@ -191,10 +192,28 @@ lat_ipp, lon_ipp, azi, ele = calculate_ipp(
     h_ipp=350_000,
 )
 
-df_lc_ipp = df_lc_pos.with_columns([
-    pl.Series("lat_ipp", lat_ipp),
-    pl.Series("lon_ipp", lon_ipp),
-    pl.Series("azi", azi),
-    pl.Series("ele", ele)
-])
+df_ = df_.with_columns(
+    [
+        pl.Series("lat_ipp", lat_ipp),
+        pl.Series("lon_ipp", lon_ipp),
+        pl.Series("azi", azi),
+        pl.Series("ele", ele)
+    ]
+).filter(
+    pl.col("ele") >= 20
+)
+```
+
+Filtering out elevations below 20° is optional, but highly recommended, in order to feed cleaner data to the calibration model. However, the calibration should remain effective even without filtering, provided there are sufficient arcs.
+
+### TEC calibration ⚖️
+
+The TEC calibration is performed by estimating and removing per-arc biases from geometry-free combinations. It computes both slant TEC (sTEC) and vertical TEC (vTEC) using a polynomial expansion of the ionospheric shell up to a configurable degree (`max_degree`, default is 3).
+
+The calibration is performed in batches (`n_epochs`, default is 30) to ensure temporal stability while maintaining responsiveness to ionospheric variations.
+
+```python
+from pytecgg.tec_calibration import calculate_tec
+
+calculate_tec(df_, receiver_position=rec_pos)
 ```

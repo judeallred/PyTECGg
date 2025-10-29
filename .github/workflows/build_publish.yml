@@ -8,7 +8,6 @@ on:
 env:
   PACKAGE_NAME: "pytecgg"
 
-
 jobs:
   check_pypi:
     name: Check if current version is newer than PyPI version
@@ -38,7 +37,6 @@ jobs:
             echo "is_new_version=true" >> "$GITHUB_OUTPUT"
           fi
 
-
   build_wheels:
     needs: check_pypi
     name: Build wheels on ${{ matrix.os }} for Python ${{ matrix.python }}
@@ -64,15 +62,15 @@ jobs:
           - os: windows-latest
             python: "3.13"
             cp: "cp313"
-          # - os: macos-latest
-          #   python: "3.11"
-          #   cp: "cp311"
-          # - os: macos-latest
-          #   python: "3.12"
-          #   cp: "cp312"
-          # - os: macos-latest
-          #   python: "3.13"
-          #   cp: "cp313"
+          - os: macos-latest
+            python: "3.11"
+            cp: "cp311"
+          - os: macos-latest
+            python: "3.12"
+            cp: "cp312"
+          - os: macos-latest
+            python: "3.13"
+            cp: "cp313"
 
     steps:
       - uses: actions/checkout@v4

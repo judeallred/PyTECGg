@@ -30,8 +30,16 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# Test data
-# rinex/**/
+# Ignore rinex directory except specific test files
+rinex/**
+!rinex/v2/obs/
+!rinex/v2/obs/cgtc0920.14o
+!rinex/v3/nav/
+!rinex/v3/nav/BRDC00WRD_R_20250870000_01D_MN.rnx
+!rinex/v3/obs/
+!rinex/v3/obs/ASIR00ITA_R_20242810000_01D_30S_MO.rnx
+!rinex/v3/obs/ASIR00ITA_R_20242810000_01D_30S_MO.crx
+!rinex/v3/obs/ASIR00ITA_R_20242810000_01D_30S_MO.crx.gz
 
 # Pytest cache
 .pytest_cache/

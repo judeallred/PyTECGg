@@ -19,22 +19,22 @@ Here are common ways to get involved:
 
 ## Getting started
 
-1. Fork the repository
-2. Create your feature branch  
+1. Clone the repository and make sure you have the latest version
     ```bash
-    git checkout -b feature_amazing_feature
+    git checkout develop
+    git pull origin develop
     ```
-3. Make your changes and format your code with [Black](https://github.com/psf/black)
+2. Create your feature branch from `develop`
     ```bash
-    black .
+    git checkout -b feature_amazing_feature develop
     ```
-4. Commit and push your changes to your fork
-    ```bash
-    git push origin feature_amazing_feature
-    ```
-5. Open a Pull Request
+3. Make your changes and format your code with `black .` (please refer to the [Code style](#code-style) section)
+4. Run tests with `pytest` to ensure everything works
+5. Commit and push to your branch
+6. Open a Pull Request (PR) to the `develop` branch
 
 Please ensure that **each commit is atomic** (one feature/fix per commit) and includes a **clear message**. For bigger changes, consider writing a descriptive body.
+
 
 ## Code style
 
@@ -50,9 +50,30 @@ Some general conventions:
 
 - Prefer **clarity** over cleverness.
 
+
 ## Testing
 
 If your changes affect functionality, please include appropriate tests or describe how the changes were manually tested. This project uses [pytest](https://github.com/pytest-dev/pytest).
+
+**Before submitting a PR**, please ensure all tests pass by running `pytest`
+
+
+## Release Process
+
+For contributors submitting PRs, please ensure:
+
+- You've updated the `README.md` file — if your changes affect usage or documentation
+
+- All tests pass
+
+Once your PR is merged to `develop`, maintainers will:
+
+- Handle version tagging and management
+
+- Automatically build and publish releases to PyPI
+
+- Ensure cross-platform compatibility (Windows, Linux, macOS)
+
 
 ## Bug reports
 
