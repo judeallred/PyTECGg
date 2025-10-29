@@ -6,6 +6,7 @@ from pytecgg.tec_calibration.constants import ALTITUDE_M
 from pytecgg.tec_calibration.calibration_preprocessing import (
     _polynomial_expansion,
     _preprocessing,
+    _mapping_function,
 )
 
 
@@ -171,7 +172,7 @@ def _gg_calibration(
     return {arc_id: bias for arc_id, bias in zip(global_arcs_list, biases)}
 
 
-def estimate_bias(
+def _estimate_bias(
     df: pl.DataFrame,
     receiver_position: tuple[float, float, float],
     max_degree: int = 3,
@@ -203,3 +204,67 @@ def estimate_bias(
     """
     df_clean = _preprocessing(df, receiver_position=receiver_position, h_ipp=h_ipp)
     return _gg_calibration(df_clean, interval=n_epochs, max_degree=max_degree)
+
+
+def calculate_tec(
+    df: pl.DataFrame,
+    receiver_position: tuple[float, float, float],
+    max_degree: int = 3,
+    n_epochs: int = 30,
+    h_ipp: float = ALTITUDE_M,
+) -> pl.DataFrame:
+    """
+    Compute slant and vertical TEC (sTEC, vTEC) after per-arc bias estimation.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Input DataFrame containing GNSS observations, including:
+        - gflc_levelled: leveled sTEC measurements
+        - id_arc_valid: valid arc identifiers
+        - ele: satellite elevation angles
+    receiver_position : tuple[float, float, float]
+        Receiver position in ECEF coordinates (x, y, z) [meters].
+    max_degree : int, optional
+        Maximum degree of polynomial expansion used in calibration. Default is 3.
+    n_epochs : int, optional
+        Number of epochs per batch for calibration. Default is 30.
+    h_ipp : float, optional
+        Height of the Ionospheric Pierce Point (IPP) [m]. Default is 350_000.
+
+    Returns
+    -------
+    pl.DataFrame
+        Original DataFrame with additional columns:
+        - bias: estimated arc-level bias
+        - stec: bias-corrected slant TEC
+        - vtec: vertical TEC after mapping function correction
+    """
+    offset_by_arc = _estimate_bias(
+        df=df,
+        receiver_position=receiver_position,
+        max_degree=max_degree,
+        n_epochs=n_epochs,
+        h_ipp=h_ipp,
+    )
+
+    map_ = pl.DataFrame(
+        {
+            "id_arc_valid": list(offset_by_arc.keys()),
+            "bias": list(offset_by_arc.values()),
+        }
+    )
+
+    return (
+        df.join(
+            map_,
+            on="id_arc_valid",
+            how="left",
+        )
+        .with_columns((pl.col("gflc_levelled") - pl.col("bias")).alias("stec"))
+        .with_columns(
+            (pl.col("stec") * _mapping_function(pl.col("ele"), h_ipp=h_ipp)).alias(
+                "vtec"
+            )
+        )
+    )
