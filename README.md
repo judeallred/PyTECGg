@@ -81,20 +81,6 @@ df_obs, rec_pos, rinex_version = read_rinex_obs(OBS_PATH)
 rec_name = OBS_PATH.split("/")[-1][:4].lower()
 ```
 
-Timestamps in the epoch column are parsed as strings by default.
-To enable time-based filtering and computation, convert them to timezone-aware datetimes using Polars:
-
-```python
-import polars as pl
-
-df_obs = df_obs.with_columns(
-    pl.col("epoch")
-    .str.strptime(pl.Datetime, format="%Y-%m-%dT%H:%M:%S GPST", strict=False)
-    .dt.replace_time_zone("UTC")
-    .alias("epoch")
-)
-```
-
 ### Combinations of GNSS measurements 📡
 
 Starting from the basic observables, we can compute the following linear [combinations](https://gssc.esa.int/navipedia/index.php/Combination_of_GNSS_Measurements), useful for removing biases or isolating physical effects:

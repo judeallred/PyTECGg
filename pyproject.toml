@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pytecgg"
-version = "0.4.0"
+version = "0.4.1"
 description = "Total Electron Content (TEC) reconstruction with GNSS data – a Python package with a Rust core"
 authors = ["Vincenzo <vincenzo.ventriglia@outlook.com>"]
 readme = "README.md"
@@ -43,7 +43,7 @@ build-backend = "maturin"
 
 [project]
 name = "pytecgg"
-version = "0.4.0"
+version = "0.4.1"
 description = "Total Electron Content (TEC) reconstruction with GNSS data – a Python package with a Rust core"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -60,5 +60,6 @@ dependencies = [
     "numpy >=2.0.0",
     "scipy >=1.15",
     "pymap3d >=3.2",
-    "tzdata >=2025.2"
+    "tzdata >=2025.2",
+    "ppigrf >=2.1.0"
 ]
