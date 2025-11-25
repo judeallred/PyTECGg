@@ -101,7 +101,7 @@ def _gg_calibration(
 
         AA = np.hstack([poly_coeffs_matrix, mapping_f_matrix, gflc_vert_col])
 
-        _, triang_mat = qr(AA)
+        triang_mat = qr(AA, mode="r")[0]
 
         # Extract sub-matrices containing arc biases and known terms
         int_mat = triang_mat[n_coeffs : triang_mat.shape[1] - 1, n_coeffs:-1]
@@ -140,7 +140,7 @@ def _gg_calibration(
     known_terms_full_vec = np.vstack(known_terms_list)
 
     global_system_matrix = np.hstack([full_arcbias_mat, known_terms_full_vec])
-    _, full_triang_mat = qr(global_system_matrix)
+    full_triang_mat = qr(global_system_matrix, mode="r")[0]
 
     non_zero_rows_global = np.any(np.abs(full_triang_mat) > 1e-12, axis=1)
     full_triang_mat_cleaned = full_triang_mat[non_zero_rows_global, :]
