@@ -2,11 +2,13 @@ from typing import Any, Literal
 import math
 import warnings
 import datetime
+import logging
 
 import numpy as np
 import polars as pl
 
 from pytecgg.satellites.kepler import kepler
+from pytecgg.satellites.glonass import _glonass_satellite_coordinates
 from .constants import GNSS_CONSTANTS, TOL_KEPLER
 
 
@@ -212,6 +214,28 @@ def _satellite_coordinates(
         raise RuntimeError(
             f"{gnss_system} position computation failed for {sv_id}: {str(e)}"
         )
+
+
+def _glonass_coordinates(
+    ephem_dict: dict[str, dict[str, Any]],
+    sv_id: str,
+    obs_time: datetime.datetime | None = None,
+) -> np.ndarray:
+    """
+    Uniform interface to compute ECEF coordinates of GLONASS satellite
+    """
+    if sv_id not in ephem_dict:
+        raise KeyError(f"Satellite {sv_id} not found in ephemeris data")
+
+    if obs_time is not None and obs_time.tzinfo is None:
+        obs_time = obs_time.replace(tzinfo=datetime.timezone.utc)
+
+    try:
+        pos, _ = _glonass_satellite_coordinates(ephem_dict, sv_id, obs_time)
+        return pos
+    except (KeyError, ValueError) as e:
+        logging.warning(f"Warning while processing GLONASS satellite coordinates: {e}")
+        return np.array([], dtype=float)
 
 
 def satellite_coordinates(

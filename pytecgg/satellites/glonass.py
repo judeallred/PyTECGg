@@ -10,7 +10,7 @@ from .constants import GNSS_CONSTANTS
 const = GNSS_CONSTANTS["GLONASS"]
 
 
-def glonass_derivatives(t, state, const, ae):
+def _glonass_derivatives(t, state, const, ae):
     """Compute derivatives for GLONASS satellite motion"""
     r = state[:3]
     v = state[3:]
@@ -33,7 +33,7 @@ def glonass_derivatives(t, state, const, ae):
     return np.concatenate([v, acceleration])
 
 
-def get_gmst(ymd: list) -> float:
+def _get_gmst(ymd: list) -> float:
     """Compute Greenwich Mean Sidereal Time (simplified version)
 
     Parameters:
@@ -42,7 +42,6 @@ def get_gmst(ymd: list) -> float:
     Returns:
         GMST in radians
     """
-    # Note: This is a simplified version. For precise calculations
     # TODO
     dt = datetime.datetime(ymd[0], ymd[1], ymd[2])
     jd = dt.toordinal() + 1721425.5  # Convert to Julian Date
@@ -56,10 +55,10 @@ def get_gmst(ymd: list) -> float:
     return math.radians(gmst % 360)
 
 
-def glonass_satellite_coordinates(
+def _glonass_satellite_coordinates(
     ephem_dict: Dict[str, Dict[str, Any]],
     sv_id: str,
-    delta_seconds: float = 300.0,  # default: 5 minuti dopo l'epoca delle effemeridi
+    obs_time: datetime.datetime | None = None,
     t_res: float = 60.0,
     rtol: float = 1e-8,
     atol: float = 1e-11,
@@ -71,7 +70,7 @@ def glonass_satellite_coordinates(
     Parameters:
         ephem_dict: Dictionary containing ephemeris data
         sv_id: Satellite identifier (e.g., 'R01')
-        delta_seconds: Time in seconds to integrate from eph_time (can be negative)
+        obs_time: Observation time (datetime); if None, uses ephemeris timestamp
         t_res: Time resolution for ODE solver output
         rtol: Relative tolerance for solver
         atol: Absolute tolerance for solver
@@ -98,14 +97,13 @@ def glonass_satellite_coordinates(
         * 1000
     )
 
-    eph_time = datetime.datetime.fromtimestamp(
-        data["gps_seconds"], datetime.timezone.utc
-    )
+    eph_time = data["datetime"]
+    delta_seconds = (obs_time - eph_time).total_seconds() if obs_time else 0.0
     te = eph_time.hour * 3600 + eph_time.minute * 60 + eph_time.second
     ymd = [eph_time.year, eph_time.month, eph_time.day]
 
     # GMST at eph_time
-    theta_ge = get_gmst(ymd) + const.we * (te % 86400)
+    theta_ge = _get_gmst(ymd) + const.we * (te % 86400)
     rot_matrix = np.array(
         [
             [math.cos(theta_ge), -math.sin(theta_ge), 0],
@@ -123,7 +121,7 @@ def glonass_satellite_coordinates(
     t_span = (0, delta_seconds) if delta_seconds >= 0 else (delta_seconds, 0)
 
     sol = solve_ivp(
-        fun=lambda t, y: glonass_derivatives(t, y, const, ae),
+        fun=lambda t, y: _glonass_derivatives(t, y, const, ae),
         t_span=t_span,
         y0=initial_state,
         t_eval=np.linspace(
@@ -134,7 +132,7 @@ def glonass_satellite_coordinates(
         atol=atol,
     )
 
-    # Rotazione indietro in ECEF dopo delta_seconds
+    # Rotate back to ECEF after delta_seconds
     theta_gi = theta_ge + const.we * delta_seconds
     rot_matrix_obs = np.array(
         [
