@@ -1,68 +1,23 @@
-from typing import Tuple, Dict, Any
 import datetime
-import math
+from typing import Any
 
-from scipy.integrate import solve_ivp
 import numpy as np
+from scipy.integrate import solve_ivp
 
-from .constants import GNSS_CONSTANTS
+from ..constants import GNSS_CONSTANTS
+from pytecgg.satellites.state_vector.orbits import _glonass_derivatives, _get_gmst
 
 const = GNSS_CONSTANTS["GLONASS"]
 
 
-def _glonass_derivatives(t, state, const, ae):
-    """Compute derivatives for GLONASS satellite motion"""
-    r = state[:3]
-    v = state[3:]
-    r_norm = np.linalg.norm(r)
-
-    # Earth gravity + zonal harmonic
-    earth_grav = -const.gm * r / r_norm**3
-    zonal_term = 1.5 * const.c20 * const.gm * const.a**2 / r_norm**5
-    zonal_correction = zonal_term * np.array(
-        [
-            r[0] * (1 - 5 * (r[2] / r_norm) ** 2),
-            r[1] * (1 - 5 * (r[2] / r_norm) ** 2),
-            r[2] * (3 - 5 * (r[2] / r_norm) ** 2),
-        ]
-    )
-
-    # Total acceleration (Earth gravity + zonal harmonic + lunisolar)
-    acceleration = earth_grav + zonal_correction + ae
-
-    return np.concatenate([v, acceleration])
-
-
-def _get_gmst(ymd: list) -> float:
-    """Compute Greenwich Mean Sidereal Time (simplified version)
-
-    Parameters:
-        ymd: [year, month, day] list
-
-    Returns:
-        GMST in radians
-    """
-    # TODO
-    dt = datetime.datetime(ymd[0], ymd[1], ymd[2])
-    jd = dt.toordinal() + 1721425.5  # Convert to Julian Date
-    t = (jd - 2451545.0) / 36525.0
-    gmst = (
-        280.46061837
-        + 360.98564736629 * (jd - 2451545.0)
-        + 0.000387933 * t**2
-        - t**3 / 38710000
-    )
-    return math.radians(gmst % 360)
-
-
-def _glonass_satellite_coordinates(
-    ephem_dict: Dict[str, Dict[str, Any]],
+def _state_vector_satellite_coordinates(
+    ephem_dict: dict[str, dict[str, Any]],
     sv_id: str,
     obs_time: datetime.datetime | None = None,
     t_res: float = 60.0,
     rtol: float = 1e-8,
     atol: float = 1e-11,
-) -> Tuple[np.ndarray, Dict[str, Any]]:
+) -> tuple[np.ndarray, dict[str, Any]]:
     """
     Compute GLONASS satellite position from ephemeris data only,
     propagating motion for a given number of seconds from ephemeris time.
@@ -106,8 +61,8 @@ def _glonass_satellite_coordinates(
     theta_ge = _get_gmst(ymd) + const.we * (te % 86400)
     rot_matrix = np.array(
         [
-            [math.cos(theta_ge), -math.sin(theta_ge), 0],
-            [math.sin(theta_ge), math.cos(theta_ge), 0],
+            [np.cos(theta_ge), -np.sin(theta_ge), 0],
+            [np.sin(theta_ge), np.cos(theta_ge), 0],
             [0, 0, 1],
         ]
     )
@@ -136,8 +91,8 @@ def _glonass_satellite_coordinates(
     theta_gi = theta_ge + const.we * delta_seconds
     rot_matrix_obs = np.array(
         [
-            [math.cos(theta_gi), math.sin(theta_gi), 0],
-            [-math.sin(theta_gi), math.cos(theta_gi), 0],
+            [np.cos(theta_gi), np.sin(theta_gi), 0],
+            [-np.sin(theta_gi), np.cos(theta_gi), 0],
             [0, 0, 1],
         ]
     )
