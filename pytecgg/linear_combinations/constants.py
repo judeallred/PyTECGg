@@ -20,7 +20,7 @@ OBS_MAPPING_BY_VERSION = {
     },
     "3": {
         "G": {"phase": {"L1": "L1C", "L2": "L2W"}, "code": {"C1": "C1C", "C2": "C2W"}},
-        "R": {"phase": {"L1": "L1C", "L2": "L2C"}, "code": {"C1": "C1C", "C2": "C2C"}},
+        "R": {"phase": {"L1": "L1C", "L2": "L2P"}, "code": {"C1": "C1C", "C2": "C2P"}},
         "E": {"phase": {"L1": "L1C", "L2": "L5Q"}, "code": {"C1": "C1C", "C5": "C5Q"}},
         "C": {"phase": {"L1": "L2I", "L2": "L6I"}, "code": {"C1": "C2I", "C6": "C6I"}},
     },

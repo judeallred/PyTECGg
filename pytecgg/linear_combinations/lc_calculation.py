@@ -96,14 +96,16 @@ def calculate_linear_combinations(
 
     # Frequency handling
     if system == "R":
-        # FIXME
         if glonass_freq is None:
             raise ValueError("glonass_freq is required for GLONASS processing")
         df_pivot = df_pivot.with_columns(
-            pl.col("sv").map_dict(glonass_freq).alias("freq_number")
+            pl.col("sv").replace(glonass_freq).cast(pl.Float32).alias("freq_number")
         )
-        freq1 = (1602 + pl.col("freq_number") * 0.5625) * 1e6
-        freq2 = (1246 + pl.col("freq_number") * 0.4375) * 1e6
+        f1_fun = FREQ_BANDS["R"][phase_keys[0]]  # L1 → lambda n
+        f2_fun = FREQ_BANDS["R"][phase_keys[1]]  # L2 → lambda n
+        freq1 = f1_fun(pl.col("freq_number"))
+        freq2 = f2_fun(pl.col("freq_number"))
+
     elif system in ["G", "E", "C"]:
         phase_to_band = {v: k for k, v in phase_mapping.items()}
         band1 = phase_to_band.get(phase1)
@@ -159,4 +161,7 @@ def calculate_linear_combinations(
             )
         )
 
-    return df_result.drop([phase1, phase2, code1, code2])
+    drop_cols = [phase1, phase2, code1, code2]
+    if system == "R":
+        drop_cols.append("freq_number")
+    return df_result.drop(drop_cols)
