@@ -5,9 +5,8 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 from ..constants import GNSS_CONSTANTS
+from pytecgg.satellites.kepler.orbits import _is_ephemeris_valid
 from pytecgg.satellites.state_vector.orbits import _glonass_derivatives, _get_gmst
-
-const = GNSS_CONSTANTS["GLONASS"]
 
 
 def _state_vector_satellite_coordinates(
@@ -17,7 +16,7 @@ def _state_vector_satellite_coordinates(
     t_res: float = 60.0,
     rtol: float = 1e-8,
     atol: float = 1e-11,
-) -> tuple[np.ndarray, dict[str, Any]]:
+) -> np.ndarray:
     """
     Compute GLONASS satellite position from ephemeris data only,
     propagating motion for a given number of seconds from ephemeris time.
@@ -32,9 +31,25 @@ def _state_vector_satellite_coordinates(
 
     Returns:
         pos: [3] array of ECEF coordinates [X, Y, Z] (meters)
-        aux: Dictionary with solver information
     """
+    REQUIRED_KEYS = {
+        "satPosX": "Satellite Position X (km)",
+        "satPosY": "Satellite Position Y (km)",
+        "satPosZ": "Satellite Position Z (km)",
+        "velX": "Velocity X (km/s)",
+        "velY": "Velocity Y (km/s)",
+        "velZ": "Velocity Z (km/s)",
+        "datetime": "Ephemeris datetime",
+    }
+    const = GNSS_CONSTANTS["GLONASS"]
+
+    # Validation
+    if sv_id not in ephem_dict:
+        raise KeyError(f"Satellite {sv_id} not found in ephemeris data")
+
     data = ephem_dict[sv_id]
+    if not _is_ephemeris_valid(data, sv_id, REQUIRED_KEYS):
+        return np.array([], dtype=float), {}
 
     # Converting km/s → m/s
     re = np.array([data["satPosX"], data["satPosY"], data["satPosZ"]]) * 1000
@@ -53,6 +68,9 @@ def _state_vector_satellite_coordinates(
     )
 
     eph_time = data["datetime"]
+    if obs_time is not None and obs_time.tzinfo is None:
+        obs_time = obs_time.replace(tzinfo=datetime.timezone.utc)
+
     delta_seconds = (obs_time - eph_time).total_seconds() if obs_time else 0.0
     te = eph_time.hour * 3600 + eph_time.minute * 60 + eph_time.second
     ymd = [eph_time.year, eph_time.month, eph_time.day]
@@ -74,18 +92,20 @@ def _state_vector_satellite_coordinates(
 
     # Integration time span
     t_span = (0, delta_seconds) if delta_seconds >= 0 else (delta_seconds, 0)
+    n_steps = max(2, int(abs(t_span[1] - t_span[0]) / t_res) + 1)
 
     sol = solve_ivp(
         fun=lambda t, y: _glonass_derivatives(t, y, const, ae),
         t_span=t_span,
         y0=initial_state,
-        t_eval=np.linspace(
-            t_span[0], t_span[1], max(2, int(abs(t_span[1] - t_span[0]) / t_res) + 1)
-        ),
+        t_eval=np.linspace(t_span[0], t_span[1], n_steps),
         method="RK45",
         rtol=rtol,
         atol=atol,
     )
+
+    if not sol.success:
+        raise RuntimeError(f"ODE integration failed: {sol.message}")
 
     # Rotate back to ECEF after delta_seconds
     theta_gi = theta_ge + const.we * delta_seconds
@@ -100,13 +120,4 @@ def _state_vector_satellite_coordinates(
     inertial_pos = sol.y[:3, -1]
     ecef_pos = rot_matrix_obs @ inertial_pos
 
-    aux = {
-        "solution": sol,
-        "integration_time": delta_seconds,
-        "initial_state": initial_state,
-        "rotation_matrix": rot_matrix_obs,
-        "eph_time": eph_time,
-        "final_time": eph_time + datetime.timedelta(seconds=delta_seconds),
-    }
-
-    return ecef_pos, aux
+    return ecef_pos
