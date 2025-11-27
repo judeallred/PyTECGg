@@ -1,5 +1,5 @@
-from functools import partial
-from typing import Any, Callable
+from typing import Any, Callable, Literal
+
 import numpy as np
 import polars as pl
 
@@ -14,8 +14,30 @@ def _compute_coordinates(
     epochs: pl.Series,
     ephem_dict: dict[str, dict[str, Any]],
     coord_func: Callable[..., np.ndarray],
-    **kwargs,
+    **kwargs: Any,
 ) -> pl.DataFrame:
+    """
+    Compute satellite coordinates for multiple satellites and epochs.
+
+    Parameters
+    ----------
+    sv_ids : pl.Series
+        Series containing satellite identifiers (e.g., 'G01', 'E23', 'R01')
+    epochs : pl.Series
+        Series containing observation times as datetime objects
+    ephem_dict : dict[str, dict[str, Any]]
+        Dictionary containing ephemeris data for all satellites
+    coord_func : Callable[..., np.ndarray]
+        Function to compute coordinates for a single satellite and epoch
+    **kwargs : Any
+        Additional keyword arguments to pass to the coordinate function
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with columns: 'sv', 'epoch', 'sat_x', 'sat_y', 'sat_z'
+        containing satellite ECEF coordinates in meters.
+    """
     sv_arr = sv_ids.to_numpy()
     size = len(sv_arr)
 
@@ -51,20 +73,48 @@ def satellite_coordinates(
     sv_ids: pl.Series,
     epochs: pl.Series,
     ephem_dict: dict[str, dict[str, Any]],
-    gnss_system: str,  # TODO
+    gnss_system: Literal["GPS", "Galileo", "QZSS", "BeiDou", "GLONASS"],
+    **kwargs: Any,
 ) -> pl.DataFrame:
-    """Dispatcher selecting correct GNSS model."""  # TODO docstring
+    """
+    Compute Earth-Centered Earth-Fixed (ECEF) coordinates for GNSS satellites.
+
+    The function supports GPS, Galileo, QZSS, BeiDou (using Keplerian orbits)
+    and GLONASS (using state-vector propagation).
+
+    Parameters
+    ----------
+    sv_ids : pl.Series
+        Series containing satellite identifiers (e.g., 'G01', 'E23', 'R01')
+    epochs : pl.Series
+        Series containing observation times as datetime objects
+    ephem_dict : dict[str, dict[str, Any]]
+        Dictionary containing ephemeris data for all satellites
+    gnss_system : Literal["GPS", "Galileo", "QZSS", "BeiDou", "GLONASS"]
+        GNSS constellation identifier
+    **kwargs : Any
+        Additional parameters for GLONASS state-vector propagation:
+        - t_res : float, optional
+            Time resolution for ODE solver in seconds (default: 15.0)
+        - error_estimate : Literal["coarse", "normal", "fine"], optional
+            Error tolerance level:
+            - "coarse": ~2000 meters precision, faster
+            - "normal": ~200 meters precision, balanced (default)
+            - "fine": ~20 meters precision, slower
+
+        These parameters are ignored for non-GLONASS systems.
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with columns: 'sv', 'epoch', 'sat_x', 'sat_y', 'sat_z'
+        containing satellite ECEF coordinates in meters.
+    """
 
     if gnss_system == "GLONASS":
-        coord_func = lambda eph, sv, t, **_: _state_vector_satellite_coordinates(
-            eph, sv, t
+        coord_func = _state_vector_satellite_coordinates
+    elif gnss_system in {"GPS", "Galileo", "QZSS", "BeiDou"}:
+        coord_func = lambda ephem, sv, t, **kw: _kepler_satellite_coordinates(
+            ephem, sv, gnss_system, t, **kw
         )
-        return _compute_coordinates(sv_ids, epochs, ephem_dict, coord_func)
-
-    if gnss_system in {"GPS", "Galileo", "QZSS", "BeiDou"}:
-        coord_func = lambda eph, sv, t, system, **_: _kepler_satellite_coordinates(
-            eph, sv, system, t
-        )
-        return _compute_coordinates(
-            sv_ids, epochs, ephem_dict, coord_func, system=gnss_system
-        )
+    return _compute_coordinates(sv_ids, epochs, ephem_dict, coord_func, **kwargs)

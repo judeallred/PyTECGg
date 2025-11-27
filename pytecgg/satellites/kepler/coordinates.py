@@ -20,8 +20,8 @@ def _kepler_satellite_coordinates(
     obs_time: datetime.datetime | None = None,
 ) -> np.ndarray:
     """
-    Compute the Earth-Centered Earth-Fixed (ECEF) coordinates of a GNSS satellite
-    using broadcast ephemeris parameters
+    Compute the Earth-Centered Earth-Fixed (ECEF) coordinates of a GNSS
+    satellite using Keplerian orbital model with broadcast ephemeris parameters.
 
     Parameters
     ----------

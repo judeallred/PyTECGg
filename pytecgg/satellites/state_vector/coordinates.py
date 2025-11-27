@@ -17,19 +17,31 @@ def _state_vector_satellite_coordinates(
     error_estimate: Literal["coarse", "normal", "fine"] = "normal",
 ) -> np.ndarray:
     """
-    Compute GLONASS satellite position from ephemeris data only,
-    propagating motion for a given number of seconds from ephemeris time.
+    Compute the Earth-Centered Earth-Fixed (ECEF) coordinates of a GLONASS
+    satellite using state-vector numerical propagation model.
 
-    Parameters:
-        ephem_dict: Dictionary containing ephemeris data
-        sv_id: Satellite identifier (e.g., 'R01')
-        obs_time: Observation time (datetime); if None, uses ephemeris timestamp
-        t_res: Time resolution for ODE solver output
-        rtol: Relative tolerance for solver
-        atol: Absolute tolerance for solver
+    Parameters
+    ----------
+    ephem_dict : dict[str, dict[str, Any]]
+        Dictionary containing ephemeris data
+    sv_id : str
+        Satellite identifier (e.g., 'E23')
+    obs_time : datetime.datetime | None, optional
+        Optional observation time (datetime); if None, uses ephemeris timestamp
+    t_res : float, optional
+        Time resolution for ODE solver output in seconds, by default 15.0
+    error_estimate : Literal["coarse", "normal", "fine"], optional
+        Error tolerance level for numerical integration:
+        - "coarse": ~ 2000 meters precision
+        - "normal": ~ 200 meters precision
+        - "fine": ~ 20 meters precision
+        by default "normal"
 
-    Returns:
-        pos: [3] array of ECEF coordinates [X, Y, Z] (meters)
+    Returns
+    -------
+    np.ndarray
+        A 3-element NumPy array with the satellite's ECEF position [X, Y, Z] in
+        meters; it returns an empty array if ephemeris data is invalid or incomplete
     """
     REQUIRED_KEYS = {
         "satPosX": "Satellite Position X (km)",
