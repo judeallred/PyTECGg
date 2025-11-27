@@ -1,5 +1,5 @@
 import datetime
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from scipy.integrate import solve_ivp
@@ -13,9 +13,8 @@ def _state_vector_satellite_coordinates(
     ephem_dict: dict[str, dict[str, Any]],
     sv_id: str,
     obs_time: datetime.datetime | None = None,
-    t_res: float = 60.0,
-    rtol: float = 1e-8,
-    atol: float = 1e-11,
+    t_res: float = 15.0,
+    error_estimate: Literal["coarse", "normal", "fine"] = "normal",
 ) -> np.ndarray:
     """
     Compute GLONASS satellite position from ephemeris data only,
@@ -93,6 +92,13 @@ def _state_vector_satellite_coordinates(
     # Integration time span
     t_span = (0, delta_seconds) if delta_seconds >= 0 else (delta_seconds, 0)
     n_steps = max(2, int(abs(t_span[1] - t_span[0]) / t_res) + 1)
+
+    if error_estimate == "coarse":
+        rtol, atol = 1e-4, 1e-6
+    elif error_estimate == "normal":
+        rtol, atol = 1e-5, 1e-7
+    elif error_estimate == "fine":
+        rtol, atol = 1e-6, 1e-8
 
     sol = solve_ivp(
         fun=lambda t, y: _glonass_derivatives(t, y, const, ae),
