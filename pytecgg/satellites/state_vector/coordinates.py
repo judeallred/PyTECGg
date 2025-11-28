@@ -13,7 +13,7 @@ def _state_vector_satellite_coordinates(
     ephem_dict: dict[str, dict[str, Any]],
     sv_id: str,
     obs_time: datetime.datetime | None = None,
-    t_res: float = 15.0,
+    t_res: float | None = None,
     error_estimate: Literal["coarse", "normal", "fine"] = "normal",
 ) -> np.ndarray:
     """
@@ -28,9 +28,11 @@ def _state_vector_satellite_coordinates(
         Satellite identifier (e.g., 'E23')
     obs_time : datetime.datetime | None, optional
         Optional observation time (datetime); if None, uses ephemeris timestamp
-    t_res : float, optional
-        Time resolution for ODE solver output in seconds, by default 15.0
-    error_estimate : Literal["coarse", "normal", "fine"], optional
+    t_res : float or None, optional
+        Time resolution (seconds) for ODE solver output:
+        - if float: the trajectory is sampled at fixed intervals
+        - if None (default): ODE solver chooses internal time steps
+    error_estimate : {"coarse", "normal", "fine"}, optional
         Error tolerance level for numerical integration:
         - "coarse": ~ 2000 meters precision
         - "normal": ~ 200 meters precision
@@ -70,9 +72,9 @@ def _state_vector_satellite_coordinates(
     ae = (
         np.array(
             [
-                0.0 if data["accelX"] is None else data["accelX"],
-                0.0 if data["accelY"] is None else data["accelY"],
-                0.0 if data["accelZ"] is None else data["accelZ"],
+                data.get("accelX") or 0.0,
+                data.get("accelY") or 0.0,
+                data.get("accelZ") or 0.0,
             ]
         )
         * 1000
@@ -101,9 +103,13 @@ def _state_vector_satellite_coordinates(
     va = rot_matrix @ ve + const.we * np.array([-ra[1], ra[0], 0])
     initial_state = np.concatenate([ra, va])
 
-    # Integration time span
     t_span = (0, delta_seconds) if delta_seconds >= 0 else (delta_seconds, 0)
-    n_steps = max(2, int(abs(t_span[1] - t_span[0]) / t_res) + 1)
+
+    if t_res is None:
+        t_eval = None
+    else:
+        n_steps = max(2, int(abs(t_span[1] - t_span[0]) / t_res) + 1)
+        t_eval = np.linspace(t_span[0], t_span[1], n_steps)
 
     if error_estimate == "coarse":
         rtol, atol = 1e-4, 1e-6
@@ -116,7 +122,7 @@ def _state_vector_satellite_coordinates(
         fun=lambda t, y: _glonass_derivatives(y, const.gm, const.c20, const.a, ae),
         t_span=t_span,
         y0=initial_state,
-        t_eval=np.linspace(t_span[0], t_span[1], n_steps),
+        t_eval=t_eval,
         method="RK45",
         rtol=rtol,
         atol=atol,

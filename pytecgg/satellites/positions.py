@@ -94,8 +94,10 @@ def satellite_coordinates(
         GNSS constellation identifier
     **kwargs : Any
         Additional parameters for GLONASS state-vector propagation:
-        - t_res : float, optional
-            Time resolution for ODE solver in seconds (default: 15.0)
+        - t_res : float or None, optional
+            Time resolution (in seconds) for sampling the ODE solver solution
+            - if float: the trajectory is sampled at fixed intervals
+            - if None (default): the solver selects internal time steps automatically.
         - error_estimate : Literal["coarse", "normal", "fine"], optional
             Error tolerance level:
             - "coarse": ~2000 meters precision, faster
