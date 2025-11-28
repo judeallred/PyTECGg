@@ -1,10 +1,6 @@
 import numpy as np
 
-from pytecgg.satellites.positions import (
-    satellite_coordinates,
-    _compute_anomalies,
-    _apply_geo_correction,
-)
+from pytecgg.satellites.kepler.orbits import _apply_geo_correction, _compute_anomalies
 from pytecgg.satellites import GNSS_CONSTANTS
 
 
