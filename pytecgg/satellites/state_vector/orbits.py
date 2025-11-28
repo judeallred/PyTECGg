@@ -2,32 +2,32 @@ import datetime
 
 import numpy as np
 
-from ..constants import GNSS_CONSTANTS
 
-const = GNSS_CONSTANTS["GLONASS"]
-
-
-def _glonass_derivatives(t, state, const, ae):
+def _glonass_derivatives(state, gm, c20, a, ae):
     """Compute derivatives for GLONASS satellite motion"""
-    r = state[:3]
-    v = state[3:]
-    r_norm = np.linalg.norm(r)
+    r = state[0:3]
+    v = state[3:6]
+    r_norm = (r[0] ** 2 + r[1] ** 2 + r[2] ** 2) ** 0.5
+    z_r = r[2] / r_norm
+    z_r2 = z_r * z_r
 
     # Earth gravity + zonal harmonic
-    earth_grav = -const.gm * r / r_norm**3
-    zonal_term = 1.5 * const.c20 * const.gm * const.a**2 / r_norm**5
+    earth_grav = -gm * r / r_norm**3
+    zonal_term = 1.5 * c20 * gm * a**2 / r_norm**5
     zonal_correction = zonal_term * np.array(
         [
-            r[0] * (1 - 5 * (r[2] / r_norm) ** 2),
-            r[1] * (1 - 5 * (r[2] / r_norm) ** 2),
-            r[2] * (3 - 5 * (r[2] / r_norm) ** 2),
+            r[0] * (1 - 5 * z_r2),
+            r[1] * (1 - 5 * z_r2),
+            r[2] * (3 - 5 * z_r2),
         ]
     )
 
     # Total acceleration (Earth gravity + zonal harmonic + lunisolar)
     acceleration = earth_grav + zonal_correction + ae
 
-    return np.concatenate([v, acceleration])
+    out = np.empty(6)
+    out[0:3], out[3:6] = v, acceleration
+    return out
 
 
 def _get_gmst(ymd: list) -> float:

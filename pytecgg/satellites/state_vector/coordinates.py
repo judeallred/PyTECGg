@@ -113,7 +113,7 @@ def _state_vector_satellite_coordinates(
         rtol, atol = 1e-6, 1e-8
 
     sol = solve_ivp(
-        fun=lambda t, y: _glonass_derivatives(t, y, const, ae),
+        fun=lambda t, y: _glonass_derivatives(y, const.gm, const.c20, const.a, ae),
         t_span=t_span,
         y0=initial_state,
         t_eval=np.linspace(t_span[0], t_span[1], n_steps),
