@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 from datetime import timedelta
 
 import polars as pl
@@ -18,6 +18,7 @@ def detect_cs_lol(
     threshold_std: float = 5.0,
     threshold_abs: float = 5.0,
     max_gap: timedelta = None,
+    glonass_freq: Optional[dict[str, int]] = None,
 ) -> pl.DataFrame:
     """
     Detect cycle slip (CS) and loss-of-lock (LoL) in GNSS observations using
@@ -30,6 +31,7 @@ def detect_cs_lol(
         threshold_abs (float): Absolute threshold in meters for CS detection (default: 5.0)
         max_gap (timedelta): Maximum allowed time gap between observations before declaring
             LoL (default: inferred from df's temporal resolution)
+        glonass_freq: Optional[dict[str, int]] = None,
 
     Returns:
         pl.DataFrame: DataFrame with CS and LoL detections, containing:
@@ -43,15 +45,41 @@ def detect_cs_lol(
         combination, following the methodology described in:
         ESA Navipedia (https://gssc.esa.int/navipedia/index.php?title=Detector_based_in_code_and_carrier_phase_data:_The_Melbourne-W%C3%BCbbena_combination)
     """
-    lambda_w = C / (FREQ_BANDS[system]["L1"] - FREQ_BANDS[system]["L2"])
-    sigma_0 = lambda_w / 2
+    if system == "R":
+        if glonass_freq is None:
+            raise ValueError("glonass_freq is required for GLONASS processing")
+        valid_svs = [
+            sv
+            for sv in df.get_column("sv").unique()
+            if glonass_freq.get(sv) is not None
+        ]
+        if not valid_svs:
+            return pl.DataFrame()
+    else:
+        valid_svs = df.get_column("sv").unique()
+
     if max_gap is None:
         max_gap = _infer_temporal_resolution(df)
 
     result = []
 
-    for sv in df.get_column("sv").unique():
+    if system in ["G", "E", "C"]:
+        lambda_w_const = C / (FREQ_BANDS[system]["L1"] - FREQ_BANDS[system]["L2"])
+        sigma_0_const = lambda_w_const / 2
+
+    for sv in valid_svs:
         df_sv = df.filter(pl.col("sv") == sv).sort("epoch")
+
+        if system == "R":
+            if sv not in glonass_freq:
+                raise ValueError(f"Missing GLONASS frequency number for {sv}")
+            n = glonass_freq[sv]
+            f1 = FREQ_BANDS["R"]["L1"](n)
+            f2 = FREQ_BANDS["R"]["L2"](n)
+            lambda_w = C / (f1 - f2)
+            sigma_0 = lambda_w / 2
+        else:
+            sigma_0 = sigma_0_const
 
         k = 0
         m_mw = None

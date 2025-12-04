@@ -1,5 +1,6 @@
 from warnings import warn
 from datetime import timedelta
+from typing import Optional
 
 import polars as pl
 
@@ -203,6 +204,7 @@ def extract_arcs(
     receiver_acronym: str = None,
     max_gap: timedelta = None,
     threshold_jump: float = 10.0,
+    glonass_freq: Optional[dict[str, int]] = None,
 ) -> pl.DataFrame:
     """
     Extract continuous TEC arcs and fix GNSS linear combinations
@@ -258,6 +260,7 @@ def extract_arcs(
         threshold_abs=threshold_abs,
         threshold_std=threshold_std,
         max_gap=max_gap,
+        glonass_freq=glonass_freq,
     )
 
     df_lc_arcs = df.join(
