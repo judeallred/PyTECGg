@@ -11,17 +11,20 @@ FREQ_BANDS: dict[str, dict] = {
     "C": {"L1": 1561.098e6, "L5": 1207.14e6},
 }
 
-OBS_MAPPING_BY_VERSION = {
-    "2": {
-        "G": {"phase": {"L1": "L1", "L2": "L2"}, "code": {"C1": "C1", "C2": "P2"}},
-        "R": {"phase": {"L1": "L1", "L2": "L2"}, "code": {"C1": "C1", "C2": "C2"}},
-        "E": {"phase": {"L1": "L1", "L5": "L5"}, "code": {"C1": "C1", "C5": "C5"}},
-        "C": {"phase": {"L1": "L1", "L5": "L5"}, "code": {"C1": "C1", "C5": "C5"}},
-    },
-    "3": {
-        "G": {"phase": {"L1": "L1C", "L2": "L2W"}, "code": {"C1": "C1C", "C2": "C2W"}},
-        "R": {"phase": {"L1": "L1C", "L2": "L2P"}, "code": {"C1": "C1C", "C2": "C2P"}},
-        "E": {"phase": {"L1": "L1C", "L2": "L5Q"}, "code": {"C1": "C1C", "C5": "C5Q"}},
-        "C": {"phase": {"L1": "L2I", "L2": "L6I"}, "code": {"C1": "C2I", "C6": "C6I"}},
-    },
+# Priorities for frequency pairs
+PHASE_FREQ_PRIORITY = {
+    "G": [("L2", "L1"), ("L5", "L1")],
+    "E": [("L5", "L1"), ("L7", "L1"), ("L8", "L1")],
+    "C": [("L6", "L1"), ("L7", "L1"), ("L5", "L1")],
+    "R": [("L2", "L1")],
 }
+CODE_FREQ_PRIORITY = {
+    "G": [("C2", "C1"), ("C5", "C1")],
+    "E": [("C5", "C1"), ("C7", "C1"), ("C8", "C1")],
+    "C": [("C6", "C2"), ("C7", "C2"), ("C5", "C2")],
+    "R": [("C2", "C1")],
+}
+
+# Priorities for channel suffixes
+PHASE_CHAN_PRIORITY = ["C", "W", "X", "P"]
+CODE_CHAN_PRIORITY = ["C", "W", "X", "P"]
