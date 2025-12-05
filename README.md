@@ -3,7 +3,13 @@
 [![PyPI version](https://img.shields.io/pypi/v/pytecgg.svg)](https://pypi.org/project/pytecgg/)
 ![Python version](https://img.shields.io/badge/python-3.11--3.13-blue.svg)
 ![License](https://img.shields.io/badge/license-GPLv3-blue.svg)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/PyTECGg)
 ![Tests](https://github.com/viventriglia/PyTECGg/actions/workflows/pytest.yml/badge.svg)
+![CI](https://github.com/viventriglia/pytecgg/actions/workflows/build_publish.yml/badge.svg)
+
+<p align="left">
+  <img src="images/pytecgg_logo.svg" width="300" title="Logo PyTECGg">
+</p>
 
 Total Electron Content (**TEC**) reconstruction with **GNSS** data – a Python 🐍 package with a Rust 🦀 core
 
@@ -25,16 +31,11 @@ Why calibration matters? Because without it, you don’t actually know the true 
 This package:
 - is open source: read and access all the code!
 - supports all modern GNSS constellations, codes and signals:
-    - GPS, Galileo, BeiDou, ~~GLONASS~~ and QZSS
+    - GPS, Galileo, BeiDou, GLONASS
 - supports RINEX V2-3-4
 - provides seamless decompression for RINEX files
 
 👉 [**Contributing to PyTECGg**](./CONTRIBUTING.md)
-
-| ![Earth's ionosphere and GNSS satellites](images/project_cover.webp) |
-|:--:| 
-| *Generated image of Earth's ionosphere with GNSS satellites studying TEC* |
-
 
 
 ## Installation
