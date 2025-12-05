@@ -54,5 +54,5 @@ jupyters/
 scripts/
 
 # Markdown
-*.md
+./*.md
 !README.md

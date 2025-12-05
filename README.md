@@ -8,7 +8,7 @@
 ![CI](https://github.com/viventriglia/pytecgg/actions/workflows/build_publish.yml/badge.svg)
 
 <p align="left">
-  <img src="images/pytecgg_logo.svg" width="300" title="Logo PyTECGg">
+  <img src="docs/images/pytecgg_logo.svg" width="400" title="Logo PyTECGg">
 </p>
 
 Total Electron Content (**TEC**) reconstruction with **GNSS** data – a Python 🐍 package with a Rust 🦀 core

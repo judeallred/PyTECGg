@@ -1,0 +1,50 @@
+site_name: PyTECGg
+site_description: "TEC reconstruction and calibration with GNSS data"
+site_url: ""
+
+theme:
+  name: material
+  logo: ./images/favicon.ico
+  favicon: ./images/favicon.ico
+  features:
+    - navigation.sections
+    - navigation.instant
+    - navigation.tracking
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - pymdownx.emoji
+  - pymdownx.details
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_if_no_docstring: false
+            inherited_members: true
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Contributing: contributing.md
+  - Quickstart:
+      - Parsing RINEX: quickstart/parsing.md
+      - Linear combinations: quickstart/linear-combinations.md
+      - Arcs detection: quickstart/arcs.md
+      - IPP computation: quickstart/ipp.md
+      - TEC calibration: quickstart/tec-calibration.md
+  # - API Reference:
+  #     - Parsing: reference/parsing.md
+  #     - Satellites: reference/satellites.md
+  #     - Calibration: reference/calibration.md
