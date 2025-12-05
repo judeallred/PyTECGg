@@ -1,4 +1,5 @@
 import datetime
+import warnings
 
 import numpy as np
 import polars as pl
@@ -231,6 +232,19 @@ def calculate_tec(
         - stec: bias-corrected slant TEC
         - vtec: vertical TEC after mapping function correction
     """
+    if df.get_column("id_arc_valid").null_count() == df.shape[0]:
+        warnings.warn(
+            "No valid arcs found in the DataFrame, calibration cannot be performed."
+            "Try adjusting the arcs extraction parameters or try with another constellation.",
+        )
+        return df.with_columns(
+            [
+                pl.lit(None).alias("bias"),
+                pl.lit(None).alias("stec"),
+                pl.lit(None).alias("vtec"),
+            ]
+        )
+
     offset_by_arc = _estimate_bias(
         df=df,
         receiver_position=receiver_position,
