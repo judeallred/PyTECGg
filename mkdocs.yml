@@ -41,8 +41,8 @@ nav:
   - Quickstart:
       - Parsing RINEX: quickstart/parsing.md
       - Linear combinations: quickstart/linear-combinations.md
-      - Arcs detection: quickstart/arcs.md
-      - IPP computation: quickstart/ipp.md
+      - TEC Arcs: quickstart/arcs.md
+      - Satellite coordinates and IPP: quickstart/ipp.md
       - TEC calibration: quickstart/tec-calibration.md
   # - API Reference:
   #     - Parsing: reference/parsing.md
