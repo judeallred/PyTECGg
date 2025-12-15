@@ -1,8 +1,10 @@
 import datetime
 
 import numpy as np
+import numba as nb
 
 
+@nb.njit(cache=True)
 def _glonass_derivatives(state, gm, c20, a, ae):
     """Compute derivatives for GLONASS satellite motion"""
     r = state[0:3]
