@@ -234,7 +234,7 @@ def calculate_tec(
     """
     if df.get_column("id_arc_valid").null_count() == df.shape[0]:
         warnings.warn(
-            "No valid arcs found in the DataFrame, calibration cannot be performed."
+            "No valid arcs found in the DataFrame, calibration cannot be performed. "
             "Try adjusting the arcs extraction parameters or try with another constellation.",
         )
         return df.with_columns(

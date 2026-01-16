@@ -10,9 +10,8 @@ from pytecgg.satellites.state_vector.orbits import _glonass_derivatives, _get_gm
 
 
 def _state_vector_satellite_coordinates(
-    ephem_dict: dict[str, dict[str, Any]],
-    sv_id: str,
-    obs_time: datetime.datetime | None = None,
+    data: dict[str, Any],
+    obs_time: datetime.datetime,
     t_res: float | None = None,
     error_estimate: Literal["coarse", "normal", "fine"] = "normal",
 ) -> np.ndarray:
@@ -22,12 +21,10 @@ def _state_vector_satellite_coordinates(
 
     Parameters
     ----------
-    ephem_dict : dict[str, dict[str, Any]]
-        Dictionary containing ephemeris data
-    sv_id : str
-        Satellite identifier (e.g., 'E23')
-    obs_time : datetime.datetime | None, optional
-        Optional observation time (datetime); if None, uses ephemeris timestamp
+    data : dict[str, Any]
+        Dictionary containing ephemeris data for the specific satellite and epoch.
+    obs_time : datetime.datetime
+        OObservation time (datetime)
     t_res : float or None, optional
         Time resolution (seconds) for ODE solver output:
         - if float: the trajectory is sampled at fixed intervals
@@ -57,12 +54,8 @@ def _state_vector_satellite_coordinates(
     const = GNSS_CONSTANTS["GLONASS"]
 
     # Validation
-    if sv_id not in ephem_dict:
-        raise KeyError(f"Satellite {sv_id} not found in ephemeris data")
-
-    data = ephem_dict[sv_id]
-    if not _is_ephemeris_valid(data, sv_id, REQUIRED_KEYS):
-        return np.array([], dtype=float), {}
+    if not _is_ephemeris_valid(data, data.get("sv", "Unknown"), REQUIRED_KEYS):
+        return np.array([], dtype=float)
 
     # Converting km/s → m/s
     re = np.array([data["satPosX"], data["satPosY"], data["satPosZ"]]) * 1000
@@ -84,26 +77,27 @@ def _state_vector_satellite_coordinates(
     if obs_time is not None and obs_time.tzinfo is None:
         obs_time = obs_time.replace(tzinfo=datetime.timezone.utc)
 
-    delta_seconds = (obs_time - eph_time).total_seconds() if obs_time else 0.0
+    delta_seconds = (obs_time - eph_time).total_seconds()
     te = eph_time.hour * 3600 + eph_time.minute * 60 + eph_time.second
     ymd = [eph_time.year, eph_time.month, eph_time.day]
 
     # GMST at eph_time
     theta_ge = _get_gmst(ymd) + const.we * (te % 86400)
+    cos_tg, sin_tg = np.cos(theta_ge), np.sin(theta_ge)
     rot_matrix = np.array(
         [
-            [np.cos(theta_ge), -np.sin(theta_ge), 0],
-            [np.sin(theta_ge), np.cos(theta_ge), 0],
+            [cos_tg, -sin_tg, 0],
+            [sin_tg, cos_tg, 0],
             [0, 0, 1],
         ]
     )
 
-    # Inertial coordinates at epoch
+    # Inertial coordinates at ephemeris time
     ra = rot_matrix @ re
     va = rot_matrix @ ve + const.we * np.array([-ra[1], ra[0], 0])
     initial_state = np.concatenate([ra, va])
 
-    t_span = (0, delta_seconds) if delta_seconds >= 0 else (delta_seconds, 0)
+    t_span = (0, delta_seconds)
 
     if t_res is None:
         t_eval = None
@@ -111,12 +105,12 @@ def _state_vector_satellite_coordinates(
         n_steps = max(2, int(abs(t_span[1] - t_span[0]) / t_res) + 1)
         t_eval = np.linspace(t_span[0], t_span[1], n_steps)
 
-    if error_estimate == "coarse":
-        rtol, atol = 1e-4, 1e-6
-    elif error_estimate == "normal":
-        rtol, atol = 1e-5, 1e-7
-    elif error_estimate == "fine":
-        rtol, atol = 1e-6, 1e-8
+    tolerances = {
+        "coarse": (1e-4, 1e-6),
+        "normal": (1e-5, 1e-7),
+        "fine": (1e-6, 1e-8),
+    }
+    rtol, atol = tolerances.get(error_estimate, tolerances["normal"])
 
     sol = solve_ivp(
         fun=lambda t, y: _glonass_derivatives(y, const.gm, const.c20, const.a, ae),
@@ -129,14 +123,17 @@ def _state_vector_satellite_coordinates(
     )
 
     if not sol.success:
-        raise RuntimeError(f"ODE integration failed: {sol.message}")
+        raise RuntimeError(
+            f"ODE integration failed for {data.get('sv')}: {sol.message}"
+        )
 
     # Rotate back to ECEF after delta_seconds
     theta_gi = theta_ge + const.we * delta_seconds
+    cos_ti, sin_ti = np.cos(theta_gi), np.sin(theta_gi)
     rot_matrix_obs = np.array(
         [
-            [np.cos(theta_gi), np.sin(theta_gi), 0],
-            [-np.sin(theta_gi), np.cos(theta_gi), 0],
+            [cos_ti, sin_ti, 0],
+            [-sin_ti, cos_ti, 0],
             [0, 0, 1],
         ]
     )
