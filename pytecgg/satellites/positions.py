@@ -181,7 +181,7 @@ def satellite_coordinates(
                 right_on="datetime",
                 by="sv",
                 strategy="nearest",
-                tolerance="20m",
+                tolerance="45m",
             )
 
         return _compute_coordinates(
