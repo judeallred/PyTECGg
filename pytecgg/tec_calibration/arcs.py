@@ -205,6 +205,8 @@ def extract_arcs(
     receiver_acronym: str = None,
     max_gap: timedelta = None,
     threshold_jump: float = 10.0,
+    freq1: Optional[float] = None,
+    freq2: Optional[float] = None,
     glonass_freq: Optional[dict[str, int]] = None,
 ) -> pl.DataFrame:
     """
@@ -245,6 +247,12 @@ def extract_arcs(
         Threshold for detecting significant jumps between consecutive epochs.
         If the absolute difference between consecutive values exceeds this threshold,
         it will be treated as a jump and corrected. Default is 10
+    freq1 : float, optional
+        Frequency of the first band (Hz) for precise Wide-Lane calculation
+    freq2 : float, optional
+        Frequency of the second band (Hz) for precise Wide-Lane calculation
+    glonass_freq : dict[str, int], optional
+        Frequency mapping for GLONASS satellites, required if system is 'R'.
 
     Returns
     -------
@@ -262,6 +270,8 @@ def extract_arcs(
         threshold_std=threshold_std,
         max_gap=max_gap,
         glonass_freq=glonass_freq,
+        f1=freq1,
+        f2=freq2,
     )
 
     df_lc_arcs = df.join(

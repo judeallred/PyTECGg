@@ -1,5 +1,5 @@
 import polars as pl
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
 
 from .constants import FREQ_BANDS
 from .observables import retrieve_observable_pairs, _extract_band
@@ -16,7 +16,7 @@ def calculate_linear_combinations(
         Literal["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]
     ] = ["gflc_phase", "gflc_code", "mw"],
     glonass_freq: Optional[dict[str, int]] = None,
-) -> pl.DataFrame:
+) -> tuple[pl.DataFrame, Union[float, pl.Series], Union[float, pl.Series]]:
     """
     Process observations for a specific GNSS system to calculate specific linear combinations
 
@@ -35,7 +35,10 @@ def calculate_linear_combinations(
         glonass_freq (Optional[dict[str, int]]): Frequency mapping for GLONASS, required if system is "R"
 
     Returns:
-        pl.DataFrame: DataFrame with the requested linear combinations
+        tuple[pl.DataFrame, Union[float, pl.Series], Union[float, pl.Series]]:
+            - DataFrame with the requested linear combinations
+            - freq1: Frequency of the first band (Hz). For GLONASS, this is a Series
+            - freq2: Frequency of the second band (Hz). For GLONASS, this is a Series
     """
     # Select best observable pairs
     best_pairs = retrieve_observable_pairs(
@@ -43,7 +46,7 @@ def calculate_linear_combinations(
     )
     if best_pairs is None:
         print(f"No suitable observable pairs found for {system}")
-        return pl.DataFrame()
+        return pl.DataFrame(), 0.0, 0.0
 
     (phase1, phase2), (code1, code2) = best_pairs
 
@@ -53,7 +56,7 @@ def calculate_linear_combinations(
     )
 
     if df_sys.is_empty():
-        return pl.DataFrame()
+        return pl.DataFrame(), 0.0, 0.0
 
     # Pivot to get phase and code in separate columns
     df_pivot = df_sys.pivot(
@@ -68,7 +71,7 @@ def calculate_linear_combinations(
     if not required_cols.issubset(df_pivot.columns):
         missing = required_cols - set(df_pivot.columns)
         print(f"Warning: Missing observations: {missing}")
-        return pl.DataFrame()
+        return pl.DataFrame(), 0.0, 0.0
 
     if system == "R":
         if glonass_freq is None:
@@ -91,31 +94,6 @@ def calculate_linear_combinations(
             raise KeyError(
                 f"Missing frequency for band '{e.args[0]}' in system '{system}'"
             )
-
-    # # Frequency handling
-    # if system == "R":
-    #     if glonass_freq is None:
-    #         raise ValueError("glonass_freq is required for GLONASS processing")
-    #     df_pivot = df_pivot.with_columns(
-    #         pl.col("sv").replace(glonass_freq).cast(pl.Float32).alias("freq_number")
-    #     )
-    #     f1_fun = FREQ_BANDS["R"][phase_keys[0]]  # L1 → lambda n
-    #     f2_fun = FREQ_BANDS["R"][phase_keys[1]]  # L2 → lambda n
-    #     freq1 = f1_fun(pl.col("freq_number"))
-    #     freq2 = f2_fun(pl.col("freq_number"))
-
-    # elif system in ["G", "E", "C"]:
-    #     phase_to_band = {v: k for k, v in phase_mapping.items()}
-    #     band1 = phase_to_band.get(phase1)
-    #     band2 = phase_to_band.get(phase2)
-
-    #     try:
-    #         freq1 = FREQ_BANDS[system][band1]
-    #         freq2 = FREQ_BANDS[system][band2]
-    #     except KeyError as e:
-    #         raise KeyError(
-    #             f"Missing frequency for band '{e.args[0]}' in system '{system}'"
-    #         )
 
     df_result = df_pivot
 
@@ -162,4 +140,5 @@ def calculate_linear_combinations(
     drop_cols = [phase1, phase2, code1, code2]
     if system == "R":
         drop_cols.append("freq_number")
-    return df_result.drop(drop_cols)
+
+    return df_result.drop(drop_cols), freq1, freq2

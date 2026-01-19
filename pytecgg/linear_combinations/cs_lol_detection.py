@@ -4,7 +4,7 @@ from datetime import timedelta
 import polars as pl
 import numpy as np
 
-from .constants import FREQ_BANDS, C
+from .constants import FREQ_BANDS, C, PHASE_FREQ_PRIORITY
 
 
 def _infer_temporal_resolution(df: pl.DataFrame) -> timedelta:
@@ -19,6 +19,8 @@ def detect_cs_lol(
     threshold_abs: float = 5.0,
     max_gap: timedelta = None,
     glonass_freq: Optional[dict[str, int]] = None,
+    f1: Optional[float] = None,
+    f2: Optional[float] = None,
 ) -> pl.DataFrame:
     """
     Detect cycle slip (CS) and loss-of-lock (LoL) in GNSS observations using
@@ -31,7 +33,9 @@ def detect_cs_lol(
         threshold_abs (float): Absolute threshold in meters for CS detection (default: 5.0)
         max_gap (timedelta): Maximum allowed time gap between observations before declaring
             LoL (default: inferred from df's temporal resolution)
-        glonass_freq: Optional[dict[str, int]] = None,
+        glonass_freq (dict[str, int], optional): Frequency mapping for GLONASS satellites
+        f1 (float or pl.Series, optional): Frequency of the first band (Hz)
+        f2 (float or pl.Series, optional): Frequency of the second band (Hz)
 
     Returns:
         pl.DataFrame: DataFrame with CS and LoL detections, containing:
@@ -64,7 +68,12 @@ def detect_cs_lol(
     result = []
 
     if system in ["G", "E", "C"]:
-        lambda_w_const = C / (FREQ_BANDS[system]["L1"] - FREQ_BANDS[system]["L2"])
+        if f1 is None or f2 is None:
+            # Fallback to defaults from constants if frequencies are not provided
+            band2, band1 = PHASE_FREQ_PRIORITY[system][0]
+            f1 = FREQ_BANDS[system][band1]
+            f2 = FREQ_BANDS[system][band2]
+        lambda_w_const = C / (f1 - f2)
         sigma_0_const = lambda_w_const / 2
 
     for sv in valid_svs:
