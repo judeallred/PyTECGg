@@ -37,6 +37,7 @@ def _add_arc_id(
     """
     _id_arc = pl.col("is_loss_of_lock").cum_sum().over("sv") + 1
     _arc_length = pl.col("gflc_code").is_not_null().sum().over(["sv", _id_arc])
+    _arc_start_date = pl.col("epoch").min().over(["sv", _id_arc]).dt.strftime("%Y%m%d")
     _id_arc = _id_arc.cast(pl.Int64).cast(pl.Utf8).str.zfill(3)
 
     if receiver_acronym:
@@ -44,14 +45,14 @@ def _add_arc_id(
             "{}_{}_{}_{}",
             pl.lit(receiver_acronym),
             pl.col("sv").str.to_lowercase(),
-            pl.col("epoch").dt.strftime("%Y%m%d"),
+            _arc_start_date,
             _id_arc,
         )
     else:
         id_arc = pl.format(
             "{}_{}_{}",
             pl.col("sv").str.to_lowercase(),
-            pl.col("epoch").dt.strftime("%Y%m%d"),
+            _arc_start_date,
             _id_arc,
         )
     id_arc_valid = pl.when(_arc_length >= min_arc_length).then(id_arc).otherwise(None)
