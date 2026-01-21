@@ -1,7 +1,7 @@
 import requests
 import logging
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterable
 from requests.exceptions import RequestException
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def _download_file(
         raise
 
 
-def _batch_download(tasks: Iterable[Tuple[str, Path]]) -> None:
+def _batch_download(tasks: Iterable[tuple[str, Path]]) -> None:
     """
     Orchestrate the bulk download of multiple files.
 
@@ -85,7 +85,7 @@ def _batch_download(tasks: Iterable[Tuple[str, Path]]) -> None:
 
 
 def download_obs_ring(
-    station_code: str, year: int, doys: List[int], output_path: Path
+    station_code: str, year: int, doys: list[int], output_path: Path
 ) -> None:
     """
     Download RINEX observation files (Hatanaka crx.gz) from the INGV RING server.
@@ -127,7 +127,7 @@ def download_obs_ring(
     _batch_download(tasks)
 
 
-def download_nav_bkg(year: int, doys: List[int], output_path: Path) -> None:
+def download_nav_bkg(year: int, doys: list[int], output_path: Path) -> None:
     """
     Download global navigation RINEX files (BRDC) from the BKG server.
 
