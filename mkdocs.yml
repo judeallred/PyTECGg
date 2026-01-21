@@ -1,18 +1,49 @@
 site_name: PyTECGg
 site_description: "TEC reconstruction and calibration with GNSS data"
-site_url: ""
+site_url: "https://viventriglia.github.io/PyTECGg/"
+repo_name: PyTECGg
+repo_url: https://github.com/viventriglia/PyTECGg
+copyright: 'Developed with 💙 by <a href="https://www.linkedin.com/in/vincenzoventriglia/" target="_blank" rel="noopener">Vincenzo Ventriglia</a> (<a href="https://roma2.ingv.it/" target="_blank" rel="noopener">INGV</a>) &copy; 2025 - 2026'
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/viventriglia/PyTECGg
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pytecgg/
 
 theme:
   name: material
   logo: ./images/favicon.ico
   favicon: ./images/favicon.ico
+  font:
+    text: Roboto
+    code: Roboto Mono
   features:
     - navigation.sections
     - navigation.instant
     - navigation.tracking
+    - navigation.tabs
     - content.code.copy
     - content.tabs.link
     - toc.follow
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
 
 markdown_extensions:
   - admonition
