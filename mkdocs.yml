@@ -24,6 +24,7 @@ theme:
     - navigation.instant
     - navigation.tracking
     - navigation.tabs
+    - navigation.footer
     - content.code.copy
     - content.tabs.link
     - toc.follow
@@ -75,6 +76,7 @@ nav:
       - TEC Arcs: quickstart/arcs.md
       - Satellite coordinates and IPP: quickstart/ipp.md
       - TEC calibration: quickstart/tec-calibration.md
+      - RINEX utilities: quickstart/download-rinex.md
   # - API Reference:
   #     - Parsing: reference/parsing.md
   #     - Satellites: reference/satellites.md
