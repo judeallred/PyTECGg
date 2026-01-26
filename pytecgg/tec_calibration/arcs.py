@@ -1,6 +1,6 @@
 from warnings import warn
 from datetime import timedelta
-from typing import Optional
+from typing import Optional, Any
 
 import polars as pl
 
@@ -104,7 +104,7 @@ def _remove_cs_jumps(df: pl.DataFrame, threshold_jump: float = 10.0) -> pl.DataF
         # Calculate differences within valid arcs
         df_ = df_.with_columns(
             pl.when(pl.col("id_arc_valid").is_not_null())
-            .then(pl.col(lc_) - pl.col(lc_).shift(1))
+            .then(pl.col(lc_) - pl.col(lc_).shift(1).over("id_arc_valid"))
             .otherwise(None)
             .alias(f"_delta_{lc_}")
         )
@@ -113,7 +113,7 @@ def _remove_cs_jumps(df: pl.DataFrame, threshold_jump: float = 10.0) -> pl.DataF
         df_ = df_.with_columns(
             pl.when(pl.col("is_cycle_slip"))
             .then(pl.col(f"_delta_{lc_}"))
-            .otherwise(0)
+            .otherwise(0.0)
             .alias(f"_cs_delta_{lc_}")
         )
 
@@ -128,7 +128,7 @@ def _remove_cs_jumps(df: pl.DataFrame, threshold_jump: float = 10.0) -> pl.DataF
                 )  # Only if not already flagged as cycle slip
             )
             .then(pl.col(f"_delta_{lc_}"))
-            .otherwise(0)
+            .otherwise(0.0)
             .alias(f"_jump_delta_{lc_}")
         )
 
@@ -198,86 +198,83 @@ def _level_phase_to_code(df: pl.DataFrame) -> pl.DataFrame:
 
 def extract_arcs(
     df: pl.DataFrame,
-    const_symb: str,
     threshold_abs: float = 5.0,
     threshold_std: float = 5.0,
     min_arc_length: int = 30,
     receiver_acronym: str = None,
     max_gap: timedelta = None,
     threshold_jump: float = 10.0,
-    freq1: Optional[float] = None,
-    freq2: Optional[float] = None,
+    freq_meta: Optional[dict[str, Any]] = None,
     glonass_freq: Optional[dict[str, int]] = None,
 ) -> pl.DataFrame:
     """
-    Extract continuous TEC arcs and fix GNSS linear combinations
+    Extract continuous TEC arcs and fix GNSS linear combinations for multiple constellations.
 
     The function performs the following steps:
-    1. Detects loss-of-lock events and cycle slips
-    2. Identifies valid arcs, discarding short ones
-    3. Removes cycle-slip jumps within valid arcs
-    4. Additional check: corrects significant jumps between consecutive epochs
-    5. Calculates arc-levelled GFLC values
+    1. Detects loss-of-lock events and cycle slips per constellation.
+    2. Identifies valid arcs, discarding short ones.
+    3. Removes cycle-slip jumps within valid arcs.
+    4. Corrects significant jumps between consecutive epochs.
+    5. Calculates arc-levelled GFLC values.
 
     Parameters
     ----------
     df : pl.DataFrame
-        Input DataFrame containing GNSS observations with:
-        - epoch: Observation epochs
-        - sv: Satellite identifiers
-        - TEC-related linear combinations (e.g., gflc_code, gflc_phase, etc.)
-    const_symb : str
-        Constellation symbol (e.g., 'G' for GPS, 'E' for Galileo) used in cycle slip detection.
+        Input DataFrame containing GNSS observations.
     threshold_abs : float, optional
-        Absolute threshold for detecting cycle slips; default is 5
+        Absolute threshold for detecting cycle slips; default is 5.
     threshold_std : float, optional
-        Standard deviation multiplier threshold for detecting cycle slips; default is 5
+        Standard deviation multiplier threshold for cycle slips; default is 5.
     min_arc_length : int, optional
-        Minimum number of consecutive valid observations required for an arc to be considered valid.
-        Default: 30 epochs.
+        Minimum number of consecutive valid observations for an arc.
     receiver_acronym : str, optional
         Acronym of the receiver to prepend to arc identifiers.
-        If provided, the arc ID format will be "<receiver>_<sv>_<YYYYMMDD>_<arcnumber>".
-        Otherwise, the format will be "<sv>_<YYYYMMDD>_<arcnumber>".
-        Default: None.
     max_gap : timedelta, optional
-        Maximum allowed time gap between observations before declaring LoL (default: inferred
-        from df's temporal resolution)
+        Maximum allowed time gap before declaring Loss-of-Lock.
     threshold_jump : float, optional
-        Threshold for detecting significant jumps between consecutive epochs.
-        If the absolute difference between consecutive values exceeds this threshold,
-        it will be treated as a jump and corrected. Default is 10
-    freq1 : float, optional
-        Frequency of the first band (Hz) for precise Wide-Lane calculation
-    freq2 : float, optional
-        Frequency of the second band (Hz) for precise Wide-Lane calculation
+        Threshold for detecting significant jumps between epochs.
+    freq_meta : dict, optional
+        Frequency metadata from `calculate_linear_combinations` (MHz).
     glonass_freq : dict[str, int], optional
-        Frequency mapping for GLONASS satellites, required if system is 'R'.
+        Frequency mapping for GLONASS satellites.
 
     Returns
     -------
     pl.DataFrame
-        DataFrame with:
-        - cycle slip and loss-of-lock flags
-        - arc identifiers (id_arc, id_arc_valid)
-        - fixed linear combinations (suffix '_fix')
-        - gflc_levelled: arc-levelled GFLC values
+        DataFrame with arc identifiers and levelled GFLC values.
     """
-    df_ = detect_cs_lol(
-        df,
-        system=const_symb,
-        threshold_abs=threshold_abs,
-        threshold_std=threshold_std,
-        max_gap=max_gap,
-        glonass_freq=glonass_freq,
-        f1=freq1,
-        f2=freq2,
-    )
+    # Detect systems present in the dataframe
+    systems = df["sv"].str.slice(0, 1).unique().to_list()
 
-    df_lc_arcs = df.join(
-        df_,
-        on=["epoch", "sv"],
-    ).with_columns(
+    cs_results = []
+
+    for sys in systems:
+        # Extract frequencies from meta for the specific system
+        f1, f2 = None, None
+        if freq_meta and sys in freq_meta:
+            meta = freq_meta[sys]
+            if sys != "R":
+                f1, f2 = meta[0] * 1e6, meta[1] * 1e6  # Convert MHz back to Hz
+
+        # Detect CS and LoL for this specific system block
+        df_sys = df.filter(pl.col("sv").str.starts_with(sys))
+
+        df_cs = detect_cs_lol(
+            df_sys,
+            system=sys,
+            threshold_abs=threshold_abs,
+            threshold_std=threshold_std,
+            max_gap=max_gap,
+            glonass_freq=glonass_freq,
+            f1=f1,
+            f2=f2,
+        )
+        cs_results.append(df_cs)
+
+    # Recombine results and join back to main dataframe
+    df_all_cs = pl.concat(cs_results)
+
+    df_lc_arcs = df.join(df_all_cs, on=["epoch", "sv"], how="left").with_columns(
         _add_arc_id(min_arc_length=min_arc_length, receiver_acronym=receiver_acronym)
     )
 
