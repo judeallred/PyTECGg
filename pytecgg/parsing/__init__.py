@@ -27,10 +27,8 @@ def read_rinex_obs(path: str):
     converted from string to datetime in UTC.
     """
     df, rec_pos, rinex_version = _read_rinex_obs(path)
-    df = df.with_columns(
-        pl.col("epoch")
-        .str.strptime(pl.Datetime, format="%Y-%m-%dT%H:%M:%S GPST", strict=False)
-        .dt.replace_time_zone("UTC")
-        .alias("epoch")
+    return (
+        df.with_columns(pl.col("epoch").dt.replace_time_zone("UTC")),
+        rec_pos,
+        rinex_version,
     )
-    return df, rec_pos, rinex_version

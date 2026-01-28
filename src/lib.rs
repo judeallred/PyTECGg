@@ -49,45 +49,55 @@ fn read_rinex_obs(path: &str) -> PyResult<(PyDataFrame, (f64, f64, f64), String)
         ))?;
 
     if !rinex.is_observation_rinex() {
-        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-            "This is not a RINEX Observation file",
-        ));
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Not an OBS file"));
     }
 
-    // Extract approximate rx coordinates (ECEF) and RINEX version
     let (x, y, z) = rinex.header.rx_position.unwrap_or((f64::NAN, f64::NAN, f64::NAN));
     let version = rinex.header.version.to_string();
 
-    let mut epochs = Vec::new();
-    let mut prns = Vec::new();
-    let mut codes = Vec::new();
-    let mut values = Vec::new();
+    // Pre-allocate to prevent performance penalties from frequent vector resizing 
+    // during high-volume GNSS data ingestion.
+    let est_capacity = 250_000;
+    let mut epochs = Vec::with_capacity(est_capacity);
+    let mut prns = Vec::with_capacity(est_capacity);
+    let mut codes = Vec::with_capacity(est_capacity);
+    let mut values = Vec::with_capacity(est_capacity);
 
-    // Access the record containing observation data
     match &rinex.record {
         Record::ObsRecord(obs_data) => {
+            // Updated offset: J1900 to Unix (1970) + 19s GPS/TAI constant offset.
+            // 2_208_988_800 (standard offset) + 19 (GPS-TAI lag) = 2_208_988_819
+            const UNIX_OFFSET_MICROS: i64 = 2_208_988_819_000_000;
+
             for (obs_key, observations) in obs_data.iter() {
+                // By using the J1900 duration and subtracting the 19s TAI-GPS offset,
+                // we recover the original "round" GPST grid (00/30s) without leap seconds.
+                let total_micros = (obs_key.epoch.to_duration_since_j1900().to_seconds() * 1_000_000.0) as i64;
+                let ts = total_micros - UNIX_OFFSET_MICROS;
+
                 for signal in &observations.signals {
-                    epochs.push(obs_key.epoch.to_string());
+                    epochs.push(ts);
                     prns.push(signal.sv.to_string());
                     codes.push(signal.observable.to_string());
                     values.push(signal.value);
                 }
             }
         },
-        _ => {
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                "File does not contain observation data",
-            ));
-        }
+        _ => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("No obs data")),
     }
 
-    let df = df![
-        "epoch" => &epochs,
-        "sv" => &prns,
-        "observable" => &codes,
-        "value" => &values,
-    ]
+    // Enforce Microseconds precision to maintain schema compatibility with 
+    // Python's datetime objects
+    let epoch_series = Series::new("epoch".into(), epochs)
+        .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
+    let df = DataFrame::new(vec![
+        epoch_series.into(),
+        Series::new("sv".into(), prns).into(),
+        Series::new("observable".into(), codes).into(),
+        Series::new("value".into(), values).into(),
+    ])
     .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
     Ok((PyDataFrame(df), (x, y, z), version))
@@ -134,12 +144,12 @@ fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
         let constellation = match nav_key.sv.constellation {
             Constellation::GPS => "GPS",
             Constellation::Glonass => "GLONASS",
-            Constellation::Galileo => "Galileo",
-            Constellation::BeiDou => "BeiDou",
+            Constellation::Galileo => "GALILEO",
+            Constellation::BeiDou => "BEIDOU",
             Constellation::QZSS => "QZSS",
             Constellation::IRNSS => "IRNSS",
             Constellation::SBAS => "SBAS",
-            _ => "Unknown",
+            _ => "UNKNOWN",
         }.to_string();
 
         let sv_id = nav_key.sv.prn.to_string();
