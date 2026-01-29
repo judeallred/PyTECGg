@@ -6,12 +6,12 @@ import polars as pl
 from scipy.linalg import qr, solve
 from scipy.sparse import csr_matrix
 
-from pytecgg.tec_calibration.constants import ALTITUDE_M
 from pytecgg.tec_calibration.calibration_preprocessing import (
     _polynomial_expansion,
     _preprocessing,
     _mapping_function,
 )
+from pytecgg.context import GNSSContext
 
 
 def _gg_calibration(
@@ -167,9 +167,9 @@ def _gg_calibration(
 def _estimate_bias(
     df: pl.DataFrame,
     receiver_position: tuple[float, float, float],
-    max_degree: int = 3,
-    n_epochs: int = 30,
-    h_ipp: float = ALTITUDE_M,
+    max_degree: int,
+    n_epochs: int,
+    h_ipp: float,
 ) -> dict[str, float]:
     """
     Estimate arc-level TEC biases. The function preprocesses the data, computes vTEC,
@@ -183,11 +183,11 @@ def _estimate_bias(
     receiver_position : tuple[float, float, float]
         Receiver position in ECEF coordinates (x, y, z) [meters].
     max_degree : int, optional
-        Maximum degree of polynomial expansion. Default is 3.
+        Maximum degree of polynomial expansion.
     n_epochs : int, optional
-        Number of epochs per batch for calibration. Default is 30.
+        Number of epochs per batch for calibration.
     h_ipp : float, optional
-        Height of the IPP [m]. Default is 350_000.
+        Height of the IPP [m].
 
     Returns
     -------
@@ -200,10 +200,9 @@ def _estimate_bias(
 
 def calculate_tec(
     df: pl.DataFrame,
-    receiver_position: tuple[float, float, float],
-    max_degree: int = 3,
-    n_epochs: int = 30,
-    h_ipp: float = ALTITUDE_M,
+    ctx: GNSSContext,
+    max_polynomial_degree: int = 3,
+    batch_size_epochs: int = 30,
 ) -> pl.DataFrame:
     """
     Compute slant and vertical TEC (sTEC, vTEC) after per-arc bias estimation.
@@ -215,19 +214,17 @@ def calculate_tec(
         - gflc_levelled: leveled sTEC measurements
         - id_arc_valid: valid arc identifiers
         - ele: satellite elevation angles
-    receiver_position : tuple[float, float, float]
-        Receiver position in ECEF coordinates (x, y, z) [meters].
-    max_degree : int, optional
-        Maximum degree of polynomial expansion used in calibration. Default is 3.
-    n_epochs : int, optional
-        Number of epochs per batch for calibration. Default is 30.
-    h_ipp : float, optional
-        Height of the Ionospheric Pierce Point (IPP) [m]. Default is 350_000.
+    ctx : GNSSContext
+        Execution context containing receiver position and IPP height.
+    max_polynomial_degree : int
+        Maximum degree of polynomial expansion used in calibration.
+    batch_size_epochs : int
+        Number of epochs per batch for calibration.
 
     Returns
     -------
     pl.DataFrame
-        Original DataFrame with additional columns:
+        DataFrame with additional columns:
         - bias: estimated arc-level bias
         - stec: bias-corrected slant TEC
         - vtec: vertical TEC after mapping function correction
@@ -247,10 +244,10 @@ def calculate_tec(
 
     offset_by_arc = _estimate_bias(
         df=df,
-        receiver_position=receiver_position,
-        max_degree=max_degree,
-        n_epochs=n_epochs,
-        h_ipp=h_ipp,
+        receiver_position=ctx.receiver_pos,
+        max_degree=max_polynomial_degree,
+        n_epochs=batch_size_epochs,
+        h_ipp=ctx.h_ipp,
     )
 
     map_ = pl.DataFrame(
@@ -268,7 +265,7 @@ def calculate_tec(
         )
         .with_columns((pl.col("gflc_levelled") - pl.col("bias")).alias("stec"))
         .with_columns(
-            (pl.col("stec") * _mapping_function(pl.col("ele"), h_ipp=h_ipp)).alias(
+            (pl.col("stec") * _mapping_function(pl.col("ele"), h_ipp=ctx.h_ipp)).alias(
                 "vtec"
             )
         )

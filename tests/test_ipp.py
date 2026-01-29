@@ -1,51 +1,94 @@
 import numpy as np
+import polars as pl
+import pytest
+
 from pytecgg.satellites.ipp import calculate_ipp
+from pytecgg.satellites.constants import RE
+from pytecgg.context import GNSSContext
 
 
 def test_visible_satellite():
     """
     Evaluate IPP with a visible satellite and realistic receiver and satellite positions
     """
-    rec_pos = (-1224960.9797, 5804226.5715, 2338188.7548)  # Receiver in Asia
-    sat_pos = np.array([[-11177306.3509, 23710565.8502, 3758426.0384]])  # GPS satellite
-    h_ipp = 350_000
+    # Receiver in Asia
+    rec_pos = (-1224960.9797, 5804226.5715, 2338188.7548)
+    # GPS satellite
+    df_sat = pl.DataFrame(
+        {
+            "sat_x": [-11177306.3509],
+            "sat_y": [23710565.8502],
+            "sat_z": [3758426.0384],
+        }
+    )
 
-    lat, lon, azi, ele = calculate_ipp(rec_pos, sat_pos, h_ipp)
+    ctx = GNSSContext(
+        receiver_pos=rec_pos,
+        receiver_name="TEST",
+        rinex_version="3.04",
+        h_ipp=350_000,
+        systems=["G"],
+    )
 
-    assert np.isfinite(lat[0])
-    assert -90 <= lat[0] <= 90
-    assert -180 <= lon[0] <= 180
-    assert 0 <= azi[0] <= 360
-    assert 0 <= ele[0] <= 90
+    df_res = calculate_ipp(df_sat, ctx)
+
+    assert df_res["lat_ipp"][0] == pytest.approx(20.7, abs=0.5)
+    assert df_res["lon_ipp"][0] == pytest.approx(102.6, abs=0.5)
+    assert df_res["azi"][0] == pytest.approx(134.1, abs=0.5)
+    assert df_res["ele"][0] == pytest.approx(65.9, abs=0.5)
 
 
 def test_nan_input():
     """
     NaN values in satellite coordinates
     """
-    rec_pos = (0, 0, 0)
-    sat_pos = np.array([[np.nan, np.nan, np.nan]])
-    h_ipp = 350_000
+    df_sat = pl.DataFrame(
+        {
+            "sat_x": [np.nan],
+            "sat_y": [np.nan],
+            "sat_z": [np.nan],
+        }
+    )
 
-    lat_ipp, lon_ipp, azi, ele = calculate_ipp(rec_pos, sat_pos, h_ipp)
+    ctx = GNSSContext(
+        receiver_pos=(0.0, 0.0, RE),
+        receiver_name="TEST",
+        rinex_version="3.04",
+        h_ipp=350_000,
+        systems=["G"],
+    )
 
-    assert np.isnan(lat_ipp).all()
-    assert np.isnan(lon_ipp).all()
-    assert np.isnan(azi).all()
-    assert np.isnan(ele).all()
+    df_res = calculate_ipp(df_sat, ctx)
+
+    assert df_res["lat_ipp"].is_nan().all()
+    assert df_res["lon_ipp"].is_nan().all()
+    assert df_res["azi"].is_nan().all()
+    assert df_res["ele"].is_nan().all()
 
 
 def test_no_intersection():
     """
     Satellite too close to the receiver to intersect the ionosphere
     """
-    rec_pos = (0, 0, 0)
-    sat_pos = np.array([[0, 0, 10_000]])
-    h_ipp = 350_000
+    df_sat = pl.DataFrame(
+        {
+            "sat_x": [0.0],
+            "sat_y": [0.0],
+            "sat_z": [RE + 20_000.0],
+        }
+    )
 
-    lat_ipp, lon_ipp, azi, ele = calculate_ipp(rec_pos, sat_pos, h_ipp)
+    ctx = GNSSContext(
+        receiver_pos=(0.0, 0.0, RE),
+        receiver_name="LOW_SAT_TEST",
+        rinex_version="3.04",
+        h_ipp=350_000,
+        systems=["G"],
+    )
 
-    assert np.isnan(lat_ipp).all()
-    assert np.isnan(lon_ipp).all()
-    assert np.isnan(azi).all()
-    assert np.isnan(ele).all()
+    df_res = calculate_ipp(df_sat, ctx)
+
+    assert df_res["lat_ipp"].is_nan().all()
+    assert df_res["lon_ipp"].is_nan().all()
+    assert df_res["azi"].is_nan().all()
+    assert df_res["ele"].is_nan().all()

@@ -1,14 +1,17 @@
 import warnings
 from collections import defaultdict, Counter
-from typing import Any, Callable, Literal, Union
+from typing import Any, Callable, Union
 
 import numpy as np
 import polars as pl
 
+from pytecgg.context import SUPPORTED_SYSTEMS
 from pytecgg.satellites.kepler.coordinates import _kepler_satellite_coordinates
 from pytecgg.satellites.state_vector.coordinates import (
     _state_vector_satellite_coordinates,
 )
+
+PREFIX_MAP = {v: k for k, v in SUPPORTED_SYSTEMS.items()}
 
 
 def _compute_coordinates(
@@ -164,15 +167,6 @@ def satellite_coordinates(
         DataFrame with columns: 'sv', 'epoch', 'sat_x', 'sat_y', 'sat_z'
         containing satellite ECEF coordinates in meters
     """
-    # Mapping prefixes to constellation names for internal logic
-    PREFIX_MAP = {
-        "G": "GPS",
-        "R": "GLONASS",
-        "E": "Galileo",
-        "C": "BeiDou",
-        "J": "QZSS",
-    }
-
     unique_svs = sv_ids.unique().to_list()
     systems_in_data = {sv[0] for sv in unique_svs if sv[0] in PREFIX_MAP}
 
@@ -240,6 +234,14 @@ def satellite_coordinates(
             results.append(res)
 
     if not results:
-        return pl.DataFrame(schema=["sv", "epoch", "sat_x", "sat_y", "sat_z"])
+        return pl.DataFrame(
+            schema={
+                "sv": pl.String,
+                "epoch": pl.Datetime,
+                "sat_x": pl.Float64,
+                "sat_y": pl.Float64,
+                "sat_z": pl.Float64,
+            }
+        )
 
     return pl.concat(results).sort("epoch")

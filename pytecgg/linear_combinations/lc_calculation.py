@@ -6,12 +6,12 @@ from .observables import retrieve_observable_pairs, _extract_band
 from .gflc import _calculate_gflc_code, _calculate_gflc_phase
 from .iflc import _calculate_iflc_code, _calculate_iflc_phase
 from .mw import _calculate_melbourne_wubbena
+from pytecgg.context import GNSSContext
 
 
 def calculate_linear_combinations(
     obs_data: pl.DataFrame,
-    rinex_version: str,
-    systems: Optional[list[Literal["G", "E", "C", "R"]]] = None,
+    ctx: GNSSContext,
     combinations: list[
         Literal["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]
     ] = ["gflc_phase", "gflc_code", "mw"],
@@ -20,36 +20,34 @@ def calculate_linear_combinations(
     """
     Process observations for multiple GNSS systems to calculate specific linear combinations
 
-    Parameters:
-        obs_data (pl.DataFrame): DataFrame containing observation data
-        rinex_version (str): RINEX version string (e.g., '2.11', '3.04')
-        systems (Optional[list[Literal["G", "E", "C", "R"]]]):
-            List of GNSS systems to process. If None, all systems in obs_data are processed.
-        combinations (list[Literal["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]]):
-            List of combinations to calculate. Options:
-                - "gflc_phase": Geometry-Free Linear Combination (Phase)
-                - "gflc_code": Geometry-Free Linear (Code)
-                - "mw": Melbourne-Wübbena combination
-                - "iflc_phase": Ionosphere-Free Linear Combination (Phase)
-                - "iflc_code": Ionosphere-Free Linear Combination (Code)
-            Defaults to ["gflc_phase", "gflc_code", "mw"]
-        glonass_freq (Optional[dict[str, int]]): Frequency mapping for GLONASS, required if "R" is processed
+    Parameters
+    ----------
+    obs_data : pl.DataFrame
+        DataFrame containing observation data.
+    ctx : GNSSContext
+        Execution context containing GNSS systems, RINEX version, and support lookups.
+    combinations : list[Literal["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]]
+        List of combinations to calculate. Options:
+            - "gflc_phase": Geometry-Free Linear Combination (Phase)
+            - "gflc_code": Geometry-Free Linear (Code)
+            - "mw": Melbourne-Wübbena combination
+            - "iflc_phase": Ionosphere-Free Linear Combination (Phase)
+            - "iflc_code": Ionosphere-Free Linear Combination (Code)
+        Defaults to ["gflc_phase", "gflc_code", "mw"]
 
-    Returns:
-        tuple[pl.DataFrame, dict[str, Any]]:
-            - DataFrame with the requested linear combinations
-            - freq_meta: Dictionary containing frequencies (MHz) for each system.
-                Format: {system: (f1, f2)} or {system: {sv: (f1, f2)}} for GLONASS.
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with the requested linear combinations.
     """
-    if systems is None:
-        systems = obs_data["sv"].str.slice(0, 1).unique().to_list()  # type: ignore
-
     results = []
-    freq_meta = {}
 
-    for system in systems:
+    for system_ in ctx.systems:
         best_pairs = retrieve_observable_pairs(
-            obs_data, system=system, rinex_version=rinex_version, prefer_by_suffix=True
+            obs_data,
+            system=system_,
+            rinex_version=ctx.rinex_version,
+            prefer_by_suffix=True,
         )
 
         if best_pairs is None:
@@ -58,7 +56,7 @@ def calculate_linear_combinations(
         (phase1, phase2), (code1, code2) = best_pairs
 
         df_sys = obs_data.filter(
-            (pl.col("sv").str.starts_with(system))
+            (pl.col("sv").str.starts_with(system_))
             & (pl.col("observable").is_in([phase1, phase2, code1, code2]))
         )
 
@@ -68,7 +66,7 @@ def calculate_linear_combinations(
         df_pivot = df_sys.pivot(
             values="value",
             index=["epoch", "sv"],
-            columns="observable",
+            on="observable",
             aggregate_function="first",
         )
 
@@ -76,34 +74,33 @@ def calculate_linear_combinations(
         if not required_cols.issubset(df_pivot.columns):
             continue
 
-        # Handle system-specific frequency mapping
-        if system == "R":
-            if glonass_freq is None:
+        if system_ == "R":
+            # GLONASS frequencies are SV-dependent based on the channel lookup
+            if not ctx.glonass_channels:
                 continue
 
             # Map GLONASS channels to frequencies per SV
             f1_map = FREQ_BANDS["R"][_extract_band(phase1)]
             f2_map = FREQ_BANDS["R"][_extract_band(phase2)]
 
-            # MHz for metadata
-            sv_freqs = {
+            # Metadata in MHz
+            ctx.freq_meta[system_] = {
                 sv: (f1_map(k) / 1e6, f2_map(k) / 1e6)
-                for sv, k in glonass_freq.items()
+                for sv, k in ctx.glonass_channels.items()
                 if k is not None
             }
-            freq_meta[system] = sv_freqs
 
             df_step = df_pivot.with_columns(
-                pl.col("sv").replace(glonass_freq).cast(pl.Float32).alias("_k")
+                pl.col("sv").replace(ctx.glonass_channels).cast(pl.Float32).alias("_k")
             )
             freq1, freq2 = f1_map(pl.col("_k")), f2_map(pl.col("_k"))
         else:
             try:
-                f1 = FREQ_BANDS[system][_extract_band(phase1)]
-                f2 = FREQ_BANDS[system][_extract_band(phase2)]
+                f1 = FREQ_BANDS[system_][_extract_band(phase1)]
+                f2 = FREQ_BANDS[system_][_extract_band(phase2)]
 
                 # MHz for metadata
-                freq_meta[system] = (f1 / 1e6, f2 / 1e6)
+                ctx.freq_meta[system_] = (f1 / 1e6, f2 / 1e6)
                 freq1, freq2 = pl.lit(f1), pl.lit(f2)
                 df_step = df_pivot
             except KeyError:
@@ -153,6 +150,6 @@ def calculate_linear_combinations(
         results.append(df_step.drop(drop_cols))
 
     if not results:
-        return pl.DataFrame(), {}
+        return pl.DataFrame()
 
-    return pl.concat(results), freq_meta
+    return pl.concat(results)

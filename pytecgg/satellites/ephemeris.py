@@ -1,84 +1,31 @@
-from datetime import datetime, timedelta, timezone
-from typing import Any, Union
+from datetime import datetime
+from typing import Any
 
 import polars as pl
 
-from .constants import CONSTELLATION_PARAMS
+from .constants import CONSTELLATION_PARAMS, GPS_EPOCH
+from pytecgg.context import GNSSContext
 
-Ephem = dict[str, Union[dict[str, Any], list[dict[str, Any]]]]
+Ephem = dict[str, dict[str, Any] | list[dict[str, Any]]]
 
 
-def _parse_time(time_str: str, time_system: str, time_offset: timedelta) -> datetime:
+def _get_gps_time(dt: datetime) -> tuple[int, float]:
+    """Convert UTC-aware datetime to GPS week and seconds of the week."""
+    delta = dt - GPS_EPOCH
+    gps_week = delta.days // 7
+    gps_seconds = (delta.days % 7) * 86400 + delta.seconds + delta.microseconds / 1e6
+    return gps_week, gps_seconds
+
+
+def prepare_ephemeris(nav: dict[str, pl.DataFrame], ctx: GNSSContext) -> Ephem:
     """
-    Parse RINEX time string with time system awareness.
+    Prepare ephemeris data from RINEX navigation data using the settings in GNSSContext.
 
-    Parameters
-    ----------
-    time_str : str
-        Time string from RINEX file.
-    time_system : str
-        Time system identifier ('GPST', 'BDT', etc.).
-    time_offset : timedelta
-        Offset to apply for conversion to UTC.
+    This function processes multiple GNSS constellations and formats data based on
+    their specific orbit propagation models:
 
-    Returns
-    -------
-    datetime
-        Timezone-aware datetime in UTC.
-    """
-    if isinstance(time_str, str):
-        # Remove time system suffix if present
-        clean_str = time_str.split(f" {time_system}")[0].strip()
-
-        try:
-            # Parse naive datetime
-            dt = datetime.fromisoformat(clean_str)
-
-            # Apply time system offset and convert to UTC
-            if time_offset:
-                dt = dt - time_offset
-
-            # Make timezone-aware (UTC)
-            return dt.replace(tzinfo=timezone.utc)
-
-        except ValueError as e:
-            raise ValueError(f"Failed to parse time string '{time_str}': {e}")
-
-    raise TypeError(f"Unsupported time format: {type(time_str)}")
-
-
-def _greg2gps(dt: datetime) -> tuple[int, float]:
-    """
-    Convert Gregorian date to GPS week and seconds.
-
-    Parameters
-    ----------
-    dt : datetime
-        Datetime object to convert.
-
-    Returns
-    -------
-    tuple[int, float]
-        (GPS week, GPS seconds).
-    """
-    epoch = datetime(1980, 1, 6, tzinfo=timezone.utc)
-    delta = dt - epoch
-    return (
-        delta.days // 7,
-        (delta.days % 7) * 86400 + delta.seconds + delta.microseconds / 1e6,
-    )
-
-
-def prepare_ephemeris(
-    nav: dict[str, pl.DataFrame], constellations: list[str] | None = None
-) -> Ephem:
-    """
-    Prepare ephemeris data for the specified constellation from RINEX navigation data.
-
-    The logic depends on the orbit propagation model required:
-
-    1.  Keplerian Orbits (GPS, Galileo, QZSS, BeiDou):
-        Only a single 'central' ephemeris message of the day is selected per satellite.
+    1.  Keplerian Orbits (GPS, Galileo, BeiDou):
+        Selects a single representative ephemeris message (the central one) per satellite.
 
     2.  State-Vector Orbits (GLONASS):
         All available ephemeris messages are collected for the satellite. This is
@@ -89,58 +36,50 @@ def prepare_ephemeris(
     Parameters:
     ----------
     nav : dict[str, pl.DataFrame]
-        Dictionary containing navigation data (Polars DataFrames) from a RINEX
-        file, keyed by constellation identifier (e.g., 'GPS', 'GLONASS').
-    constellations : list[str] | None
-        List of GNSS constellation names to process. If None, GPS, GLONASS, Galileo,
-        and BeiDou will be processed.
+        Navigation data from RINEX, keyed by constellation name (e.g., 'GPS', 'GLONASS').
+    ctx : GNSSContext
+        Execution context containing target systems and settings.
 
     Returns:
     -------
     Ephem
-        Dictionary with prepared ephemeris data, keyed by normalized satellite ID
-        (e.g., 'R09', 'G01').
-
-        * For Keplerian systems: `dict[sv_id, dict[str, Any]]` (a single ephemeris dictionary).
-        * For GLONASS: `dict[sv_id, list[dict[str, Any]]]` (a list of all available ephemeris dictionaries for the day).
+        Dictionary keyed by satellite ID (e.g., 'G01', 'R09').
+        Values are a single dict for Keplerian systems or a list of dicts for GLONASS.
     """
-    # Systems that we can support
-    ALLOWED_SYSTEMS = {"GPS", "GLONASS", "Galileo", "BeiDou"}  # TODO spostiamo fuori!
-
-    if constellations is not None:
-        target_systems = [c for c in constellations if c in ALLOWED_SYSTEMS]
-    else:
-        target_systems = [c for c in nav.keys() if c in ALLOWED_SYSTEMS]
-
     ephem_dict: Ephem = {}
+    inverse_map = ctx.symbol_to_name
 
-    for constellation in target_systems:
-        if constellation not in CONSTELLATION_PARAMS or constellation not in nav:
+    for symbol_ in ctx.systems:
+        const_name = inverse_map.get(symbol_)
+        if const_name not in nav:
             continue
 
-        params = CONSTELLATION_PARAMS[constellation]
-        is_state_vector = constellation == "GLONASS"
+        params = CONSTELLATION_PARAMS[const_name]
+        is_state_vector = symbol_ == "R"
 
-        for sat_id in nav[constellation]["sv"].unique().to_list():
-            normalised_sat_id = f"{params.prefix}{int(sat_id):02d}"
-            sat_data = nav[constellation].filter(pl.col("sv") == sat_id)
+        unique_svs = nav[const_name]["sv"].unique().to_list()
+        for sat_id_ in unique_svs:
+            normalised_sat_id = f"{symbol_}{int(sat_id_):02d}"
+            sat_data = nav[const_name].filter(pl.col("sv") == sat_id_)
 
             if sat_data.is_empty():
                 continue
 
             if is_state_vector:
-                # State-vector models (GLONASS) require the full history
+                # GLONASS: Logic for state-vector models requires the full history
                 sat_data = sat_data.sort("epoch")
-                sat_ephems_list = []
 
+                # Extract FDMA channel
+                channel_val = sat_data.get_column("channel")[0]
+                ctx.glonass_channels[normalised_sat_id] = channel_val
+
+                sat_ephems_list = []
                 for row in sat_data.to_dicts():
-                    ephe_time = _parse_time(
-                        row["epoch"], params.time_system, params.time_offset
-                    )
-                    gps_week, gps_sec = _greg2gps(ephe_time)
+                    ephe_time = row["epoch"]
+                    gps_week, gps_sec = _get_gps_time(ephe_time)
 
                     ephem = {
-                        "constellation": constellation,
+                        "constellation": const_name,
                         "sv": normalised_sat_id,
                         "datetime": ephe_time,
                         "gps_week": gps_week,
@@ -152,16 +91,17 @@ def prepare_ephemeris(
                 ephem_dict[normalised_sat_id] = sat_ephems_list
 
             else:
-                # Keplerian models (GPS, Galileo, BeiDou) use a single representative message to minimize computational cost
-                ephe_row = sat_data.row(len(sat_data) // 2, named=True)
+                # Keplerian models (GPS, Galileo, BeiDou) use a single representative message to minimise computational cost
+                valid_data = sat_data.drop_nulls(subset=params.fields)
+                if valid_data.is_empty():
+                    continue
 
-                ephe_time = _parse_time(
-                    ephe_row["epoch"], params.time_system, params.time_offset
-                )
-                gps_week, gps_sec = _greg2gps(ephe_time)
+                ephe_row = valid_data.row(len(valid_data) // 2, named=True)
+                ephe_time = ephe_row["epoch"]
+                gps_week, gps_sec = _get_gps_time(ephe_time)
 
                 ephem = {
-                    "constellation": constellation,
+                    "constellation": const_name,
                     "sv": normalised_sat_id,
                     "datetime": ephe_time,
                     "gps_week": gps_week,

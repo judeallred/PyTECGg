@@ -5,6 +5,7 @@ from typing import Optional, Any
 import polars as pl
 
 from pytecgg.linear_combinations import detect_cs_lol
+from pytecgg.context import GNSSContext
 
 
 def _add_arc_id(
@@ -198,14 +199,12 @@ def _level_phase_to_code(df: pl.DataFrame) -> pl.DataFrame:
 
 def extract_arcs(
     df: pl.DataFrame,
+    ctx: GNSSContext,
     threshold_abs: float = 5.0,
     threshold_std: float = 5.0,
     min_arc_length: int = 30,
-    receiver_acronym: str = None,
-    max_gap: timedelta = None,
+    max_gap: Optional[timedelta] = None,
     threshold_jump: float = 10.0,
-    freq_meta: Optional[dict[str, Any]] = None,
-    glonass_freq: Optional[dict[str, int]] = None,
 ) -> pl.DataFrame:
     """
     Extract continuous TEC arcs and fix GNSS linear combinations for multiple constellations.
@@ -221,63 +220,60 @@ def extract_arcs(
     ----------
     df : pl.DataFrame
         Input DataFrame containing GNSS observations.
+    ctx : GNSSContext
+        Execution context containing system configurations and frequency metadata.
     threshold_abs : float, optional
         Absolute threshold for detecting cycle slips; default is 5.
     threshold_std : float, optional
         Standard deviation multiplier threshold for cycle slips; default is 5.
     min_arc_length : int, optional
-        Minimum number of consecutive valid observations for an arc.
-    receiver_acronym : str, optional
-        Acronym of the receiver to prepend to arc identifiers.
+        Minimum number of consecutive valid observations for an arc; default is 30.
     max_gap : timedelta, optional
         Maximum allowed time gap before declaring Loss-of-Lock.
     threshold_jump : float, optional
-        Threshold for detecting significant jumps between epochs.
-    freq_meta : dict, optional
-        Frequency metadata from `calculate_linear_combinations` (MHz).
-    glonass_freq : dict[str, int], optional
-        Frequency mapping for GLONASS satellites.
+        Threshold for detecting significant jumps between epochs; default is 10.
 
     Returns
     -------
     pl.DataFrame
         DataFrame with arc identifiers and levelled GFLC values.
     """
-    # Detect systems present in the dataframe
-    systems = df["sv"].str.slice(0, 1).unique().to_list()
-
     cs_results = []
 
-    for sys in systems:
-        # Extract frequencies from meta for the specific system
+    # Iterate through systems defined in the context to handle constellation-specific noise/frequencies
+    for sys_ in ctx.systems:
         f1, f2 = None, None
-        if freq_meta and sys in freq_meta:
-            meta = freq_meta[sys]
-            if sys != "R":
-                f1, f2 = meta[0] * 1e6, meta[1] * 1e6  # Convert MHz back to Hz
+        if sys_ in ctx.freq_meta:
+            meta = ctx.freq_meta[sys_]
+            if sys_ != "R":
+                f1, f2 = meta[0] * 1e6, meta[1] * 1e6
 
         # Detect CS and LoL for this specific system block
-        df_sys = df.filter(pl.col("sv").str.starts_with(sys))
+        df_sys = df.filter(pl.col("sv").str.starts_with(sys_))
+
+        if df_sys.is_empty():
+            continue
 
         df_cs = detect_cs_lol(
             df_sys,
-            system=sys,
+            system=sys_,
             threshold_abs=threshold_abs,
             threshold_std=threshold_std,
             max_gap=max_gap,
-            glonass_freq=glonass_freq,
+            glonass_freq=ctx.glonass_channels,
             f1=f1,
             f2=f2,
         )
         cs_results.append(df_cs)
 
-    # Recombine results and join back to main dataframe
+    # Recombine results, join back the slip detection results and
+    # assign unique arc identifiers
     df_all_cs = pl.concat(cs_results)
-
     df_lc_arcs = df.join(df_all_cs, on=["epoch", "sv"], how="left").with_columns(
-        _add_arc_id(min_arc_length=min_arc_length, receiver_acronym=receiver_acronym)
+        _add_arc_id(min_arc_length=min_arc_length, receiver_acronym=ctx.receiver_name)
     )
 
+    # Apply corrections to the linear combinations and perform phase-to-code levelling
     df_lc_arcs_fix = _remove_cs_jumps(df=df_lc_arcs, threshold_jump=threshold_jump)
 
     return _level_phase_to_code(df=df_lc_arcs_fix)
