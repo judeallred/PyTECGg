@@ -35,7 +35,8 @@ addopts = "-v --cov=pytecgg --cov-report=term-missing"
 [tool.coverage.run]
 omit = [
     "*/__init__.py",
-    "*/constants.py"
+    "*/constants.py",
+    "pytecgg/utils/benchmark.py"
 ]
 
 [tool.maturin]
