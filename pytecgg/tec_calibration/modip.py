@@ -2,13 +2,9 @@ import datetime
 import warnings
 from pathlib import Path
 from functools import lru_cache
-from importlib.resources import files
 from typing import Sequence, Union, Literal
 
 import numpy as np
-from ppigrf import igrf
-from pymap3d import ecef2geodetic
-from scipy.interpolate import RegularGridInterpolator
 
 from .constants import ALTITUDE_KM, LONGITUDES, LATITUDES
 
@@ -31,6 +27,8 @@ def _calculate_modip_grid(year: int, altitude_km: float = ALTITUDE_KM) -> np.nda
     np.ndarray
         MoDip grid values
     """
+    from ppigrf import igrf
+
     dates = datetime.datetime(year, 1, 1)
     lon_grid, lat_grid = np.meshgrid(LONGITUDES, LATITUDES, indexing="ij")
 
@@ -95,6 +93,8 @@ def _load_modip_grid(year: int) -> np.ndarray:
     """
     Load a precomputed MoDip grid for a given year, or compute it if missing.
     """
+    from importlib.resources import files
+
     fname = f"modip_{year}.npz"
     modip_grids = files("pytecgg.tec_calibration.modip_grids").joinpath(fname)
 
@@ -147,6 +147,8 @@ def _parse_coords(
                     f"Invalid coords for coord_type='{coord_type}': expected shape (N, 2), got {points_geo.shape}"
                 )
     elif coord_type == "ecef":
+        from pymap3d import ecef2geodetic
+
         if isinstance(coords, tuple) and len(coords) == 3:
             x, y, z = coords
             points_ecef = np.column_stack([x, y, z])
@@ -199,6 +201,8 @@ def extract_modip(
     np.ndarray
         Interpolated MoDip values for the specified coordinates
     """
+    from scipy.interpolate import RegularGridInterpolator
+
     points_geo = _parse_coords(coords, coord_type)
     modip_grid = _load_modip_grid(year)
     interpolator = RegularGridInterpolator(
