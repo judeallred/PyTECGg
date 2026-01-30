@@ -1,5 +1,4 @@
 import warnings
-from collections import defaultdict, Counter
 from typing import Any, Callable, Union
 
 import numpy as np
@@ -12,6 +11,44 @@ from pytecgg.satellites.state_vector.coordinates import (
 )
 
 PREFIX_MAP = {v: k for k, v in SUPPORTED_SYSTEMS.items()}
+
+
+def _emit_warnings(system: str, missing: set[str], failed: set[str]) -> None:
+    """Helper function to emit warnings for missing or failed satellite coordinate calculations."""
+
+    if missing:
+        sorted_missing = sorted(missing)
+        n_sv = len(missing)
+
+        # If more than 8 missing, show only some
+        if n_sv > 8:
+            sv_ids = ", ".join(sorted_missing[:5]) + f"... (+ {n_sv - 5} more)"
+        else:
+            sv_ids = ", ".join(sorted_missing)
+
+        verb = "has" if n_sv == 1 else "have"
+        pron = "It" if n_sv == 1 else "These"
+
+        if system == "GLONASS":
+            info = f"One or more ephemerides are missing for {sv_ids}"
+            reason = (
+                f"{pron} may be missing from NAV file or the time gap may be too large"
+            )
+        else:
+            info = f"{sv_ids} {verb} no valid ephemerides"
+            reason = f"{pron} may be missing from NAV file or {verb} been excluded due to invalid/incomplete parameters"
+
+        warnings.warn(
+            f"[{system}] {info}. Coordinates set to NaN.\n" f"ℹ️  {reason}.\n",
+            RuntimeWarning,
+        )
+
+    if failed:
+        sv_ids = ", ".join(sorted(failed))
+        warnings.warn(
+            f"[{system}] Calculation failed for {sv_ids}. Coordinates set to NaN.\n",
+            RuntimeWarning,
+        )
 
 
 def _compute_coordinates(
@@ -49,8 +86,12 @@ def _compute_coordinates(
     x, y, z = np.full(size, np.nan), np.full(size, np.nan), np.full(size, np.nan)
 
     # Track satellites with no or problematic ephemeris for warnings
-    missing_eph_in_dict = set()
+    missing_eph = set()
     calculation_failed = set()
+    system_label = kwargs.pop(
+        "gnss_system_internal",
+        "GLONASS" if isinstance(ephem_data, pl.DataFrame) else None,
+    )
 
     # GLONASS (State-vector integration logic)
     if isinstance(ephem_data, pl.DataFrame):
@@ -60,7 +101,7 @@ def _compute_coordinates(
 
             # If satPosX is None, no ephemeris was found within tolerance in join_asof
             if row.get("satPosX") is None:
-                missing_eph_in_dict.add(sv_id)
+                missing_eph.add(sv_id)
                 continue
 
             try:
@@ -73,38 +114,15 @@ def _compute_coordinates(
                 calculation_failed.add(sv_id)
                 continue
 
-        if missing_eph_in_dict:
-            summary = ", ".join(sorted(missing_eph_in_dict))
-            count = len(missing_eph_in_dict)
-            verb = "has" if count == 1 else "have"
-            pronoun = "It" if count == 1 else "These"
-
-            warnings.warn(
-                f"[GLONASS] {summary} {verb} no valid ephemeris within tolerance (coordinates set to NaN). "
-                f"{pronoun} may be missing from the NAV file or the gap between observations and NAV messages is too large.",
-                RuntimeWarning,
-            )
-
-        if calculation_failed:
-            summary = ", ".join(sorted(calculation_failed))
-            warnings.warn(
-                f"[GLONASS] Coordinates calculation failed for {summary} (coordinates set to NaN).",
-                RuntimeWarning,
-            )
-
     # Keplerian systems (GPS, Galileo, BeiDou, QZSS)
     else:
-        # We need to pass the constellation name to the Keplerian coordinate function
-        gnss_system = kwargs.pop("gnss_system_internal", None)
-
         for i, (sv, epoch) in enumerate(zip(sv_arr, epochs)):
             if sv not in ephem_data:
-                missing_eph_in_dict.add(sv)
+                missing_eph.add(sv)
                 continue
 
             try:
-                # _kepler_satellite_coordinates requires gnss_system to select constants
-                pos = coord_func(ephem_data, sv, gnss_system, epoch, **kwargs)
+                pos = coord_func(ephem_data, sv, system_label, epoch, **kwargs)
                 if pos is not None and pos.size == 3:
                     x[i], y[i], z[i] = pos
                 else:
@@ -113,25 +131,7 @@ def _compute_coordinates(
                 calculation_failed.add(sv)
                 continue
 
-        if missing_eph_in_dict:
-            summary = ", ".join(sorted(missing_eph_in_dict))
-            count = len(missing_eph_in_dict)
-            verb = "has" if count == 1 else "have"
-            pronoun = "It" if count == 1 else "These"
-
-            warnings.warn(
-                f"[{gnss_system}] {summary} {verb} no valid ephemeris (coordinates set to NaN). "
-                f"{pronoun} may be missing from the NAV file or {verb} been excluded due to "
-                "invalid/incomplete orbital parameters.",
-                RuntimeWarning,
-            )
-
-        if calculation_failed:
-            summary = ", ".join(sorted(calculation_failed))
-            warnings.warn(
-                f"[{gnss_system}] Coordinates calculation failed for {summary} (coordinates set to NaN).",
-                RuntimeWarning,
-            )
+    _emit_warnings(system_label, missing_eph, calculation_failed)
 
     return pl.DataFrame(
         {
