@@ -48,9 +48,9 @@ def _compute_coordinates(
 
     x, y, z = np.full(size, np.nan), np.full(size, np.nan), np.full(size, np.nan)
 
-    # Track missing ephemeris for logging
-    total_eph_counts = Counter(sv_arr)
-    missing_eph_counts = defaultdict(int)
+    # Track satellites with no or problematic ephemeris for warnings
+    missing_eph_in_dict = set()
+    calculation_failed = set()
 
     # GLONASS (State-vector integration logic)
     if isinstance(ephem_data, pl.DataFrame):
@@ -60,26 +60,35 @@ def _compute_coordinates(
 
             # If satPosX is None, no ephemeris was found within tolerance in join_asof
             if row.get("satPosX") is None:
-                missing_eph_counts[sv_id] += 1
+                missing_eph_in_dict.add(sv_id)
                 continue
 
             try:
                 pos = coord_func(row, row["epoch"], **kwargs)
                 if pos is not None and pos.size == 3:
                     x[i], y[i], z[i] = pos
+                else:
+                    calculation_failed.add(sv_id)
             except Exception:
-                missing_eph_counts[sv_id] += 1
+                calculation_failed.add(sv_id)
                 continue
 
-        if missing_eph_counts:
-            lines = [
-                f"  {sv:3}: {lost:4}/{total_eph_counts[sv]:4} epochs lost ({(lost/total_eph_counts[sv])*100:5.1f}%)"
-                for sv, lost in sorted(missing_eph_counts.items())
-            ]
-            summary_report = "\n".join(lines)
+        if missing_eph_in_dict:
+            summary = ", ".join(sorted(missing_eph_in_dict))
+            count = len(missing_eph_in_dict)
+            verb = "has" if count == 1 else "have"
+            pronoun = "It" if count == 1 else "These"
+
             warnings.warn(
-                f"\nGLONASS Missing ephemeris summary:\n{summary_report}\n"
-                f"Satellite positions set to NaN (check RINEX NAV coverage).",
+                f"[GLONASS] {summary} {verb} no valid ephemeris within tolerance (coordinates set to NaN). "
+                f"{pronoun} may be missing from the NAV file or the gap between observations and NAV messages is too large.",
+                RuntimeWarning,
+            )
+
+        if calculation_failed:
+            summary = ", ".join(sorted(calculation_failed))
+            warnings.warn(
+                f"[GLONASS] Coordinates calculation failed for {summary} (coordinates set to NaN).",
                 RuntimeWarning,
             )
 
@@ -90,7 +99,7 @@ def _compute_coordinates(
 
         for i, (sv, epoch) in enumerate(zip(sv_arr, epochs)):
             if sv not in ephem_data:
-                missing_eph_counts[sv] += 1
+                missing_eph_in_dict.add(sv)
                 continue
 
             try:
@@ -99,16 +108,28 @@ def _compute_coordinates(
                 if pos is not None and pos.size == 3:
                     x[i], y[i], z[i] = pos
                 else:
-                    missing_eph_counts[sv] += 1
+                    calculation_failed.add(sv)
             except Exception:
-                missing_eph_counts[sv] += 1
+                calculation_failed.add(sv)
                 continue
 
-        if missing_eph_counts:
-            summary = ", ".join(sorted(missing_eph_counts.keys()))
+        if missing_eph_in_dict:
+            summary = ", ".join(sorted(missing_eph_in_dict))
+            count = len(missing_eph_in_dict)
+            verb = "has" if count == 1 else "have"
+            pronoun = "It" if count == 1 else "These"
+
             warnings.warn(
-                f"Missing central ephemeris for satellites: {summary}. "
-                "Satellite positions set to NaN.",
+                f"[{gnss_system}] {summary} {verb} no valid ephemeris (coordinates set to NaN). "
+                f"{pronoun} may be missing from the NAV file or {verb} been excluded due to "
+                "invalid/incomplete orbital parameters.",
+                RuntimeWarning,
+            )
+
+        if calculation_failed:
+            summary = ", ".join(sorted(calculation_failed))
+            warnings.warn(
+                f"[{gnss_system}] Coordinates calculation failed for {summary} (coordinates set to NaN).",
                 RuntimeWarning,
             )
 
