@@ -107,8 +107,7 @@ def download_obs_ring(
 
     Notes
     -----
-    Data Source: https://webring.gm.ingv.it:44324/rinex/RING
-    Files are expected in RINEX 3 long-name format.
+    Data Source: [https://webring.gm.ingv.it:44324/rinex/RING](https://webring.gm.ingv.it:44324/rinex/RING)
     """
     station_full = station_code.upper()
     if len(station_code) == 4:
@@ -145,7 +144,7 @@ def download_nav_bkg(year: int, doys: list[int], output_path: Path) -> None:
 
     Notes
     -----
-    Data Source: https://igs.bkg.bund.de/root_ftp/IGS/BRDC
+    Data Source: [https://igs.bkg.bund.de/root_ftp/IGS/BRDC](https://igs.bkg.bund.de/root_ftp/IGS/BRDC)
     """
     base_url = "https://igs.bkg.bund.de/root_ftp/IGS/BRDC"
 

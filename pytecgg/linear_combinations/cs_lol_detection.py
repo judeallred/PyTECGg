@@ -67,6 +67,13 @@ def detect_cs_lol(
 
     result = []
 
+    result_schema = {
+        "epoch": df.schema["epoch"],
+        "sv": df.schema["sv"],
+        "is_loss_of_lock": pl.Boolean,
+        "is_cycle_slip": pl.Boolean,
+    }
+
     if system in ["G", "E", "C"]:
         if f1 is None or f2 is None:
             # Fallback to defaults from constants if frequencies are not provided
@@ -175,4 +182,4 @@ def detect_cs_lol(
                 k += 1
                 m_prev = mw
 
-    return pl.DataFrame(result)
+    return pl.DataFrame(result, schema=result_schema)

@@ -1,14 +1,54 @@
 import warnings
-from collections import defaultdict, Counter
-from typing import Any, Callable, Literal, Union
+from typing import Any, Callable, Union
 
 import numpy as np
 import polars as pl
 
+from pytecgg.context import SUPPORTED_SYSTEMS
 from pytecgg.satellites.kepler.coordinates import _kepler_satellite_coordinates
 from pytecgg.satellites.state_vector.coordinates import (
     _state_vector_satellite_coordinates,
 )
+
+PREFIX_MAP = {v: k for k, v in SUPPORTED_SYSTEMS.items()}
+
+
+def _emit_warnings(system: str, missing: set[str], failed: set[str]) -> None:
+    """Helper function to emit warnings for missing or failed satellite coordinate calculations."""
+
+    if missing:
+        sorted_missing = sorted(missing)
+        n_sv = len(missing)
+
+        # If more than 8 missing, show only some
+        if n_sv > 8:
+            sv_ids = ", ".join(sorted_missing[:5]) + f"... (+ {n_sv - 5} more)"
+        else:
+            sv_ids = ", ".join(sorted_missing)
+
+        verb = "has" if n_sv == 1 else "have"
+        pron = "It" if n_sv == 1 else "These"
+
+        if system == "GLONASS":
+            info = f"One or more ephemerides are missing for {sv_ids}"
+            reason = (
+                f"{pron} may be missing from NAV file or the time gap may be too large"
+            )
+        else:
+            info = f"{sv_ids} {verb} no valid ephemerides"
+            reason = f"{pron} may be missing from NAV file or {verb} been excluded due to invalid/incomplete parameters"
+
+        warnings.warn(
+            f"[{system}] {info}. Coordinates set to NaN.\n" f"ℹ️  {reason}.\n",
+            RuntimeWarning,
+        )
+
+    if failed:
+        sv_ids = ", ".join(sorted(failed))
+        warnings.warn(
+            f"[{system}] Calculation failed for {sv_ids}. Coordinates set to NaN.\n",
+            RuntimeWarning,
+        )
 
 
 def _compute_coordinates(
@@ -45,65 +85,53 @@ def _compute_coordinates(
 
     x, y, z = np.full(size, np.nan), np.full(size, np.nan), np.full(size, np.nan)
 
-    # Track missing ephemeris for logging
-    total_eph_counts = Counter(sv_arr)
-    missing_eph_counts = defaultdict(int)
+    # Track satellites with no or problematic ephemeris for warnings
+    missing_eph = set()
+    calculation_failed = set()
+    system_label = kwargs.pop(
+        "gnss_system_internal",
+        "GLONASS" if isinstance(ephem_data, pl.DataFrame) else None,
+    )
 
-    # GLONASS
+    # GLONASS (State-vector integration logic)
     if isinstance(ephem_data, pl.DataFrame):
         data_rows = ephem_data.to_dicts()
         for i, row in enumerate(data_rows):
-
             sv_id = row["sv"]
-            # If satPosX is None, no ephemeris was found within tolerance
+
+            # If satPosX is None, no ephemeris was found within tolerance in join_asof
             if row.get("satPosX") is None:
-                missing_eph_counts[sv_id] += 1
+                missing_eph.add(sv_id)
                 continue
 
             try:
                 pos = coord_func(row, row["epoch"], **kwargs)
                 if pos is not None and pos.size == 3:
                     x[i], y[i], z[i] = pos
+                else:
+                    calculation_failed.add(sv_id)
             except Exception:
-                missing_eph_counts[sv_id] += 1
+                calculation_failed.add(sv_id)
                 continue
 
-        if missing_eph_counts:
-            lines = [
-                f"  {sv:3}: {lost:4}/{total_eph_counts[sv]:4} epochs lost ({(lost/total_eph_counts[sv])*100:5.1f}%)"
-                for sv, lost in sorted(missing_eph_counts.items())
-            ]
-            summary_report = "\n".join(lines)
-            warnings.warn(
-                f"\nGLONASS Missing ephemeris summary:\n{summary_report}\n"
-                f"Satellite positions set to NaN (check RINEX NAV coverage).",
-                RuntimeWarning,
-            )
-
-    # Keplerian systems (GPS, Galileo, BeiDou)
+    # Keplerian systems (GPS, Galileo, BeiDou, QZSS)
     else:
         for i, (sv, epoch) in enumerate(zip(sv_arr, epochs)):
             if sv not in ephem_data:
-                missing_eph_counts[sv] += 1
+                missing_eph.add(sv)
                 continue
 
             try:
-                pos = coord_func(ephem_data, sv, epoch, **kwargs)
+                pos = coord_func(ephem_data, sv, system_label, epoch, **kwargs)
                 if pos is not None and pos.size == 3:
                     x[i], y[i], z[i] = pos
                 else:
-                    missing_eph_counts[sv] += 1
+                    calculation_failed.add(sv)
             except Exception:
-                missing_eph_counts[sv] += 1
+                calculation_failed.add(sv)
                 continue
 
-        if missing_eph_counts:
-            summary = ", ".join(sorted(missing_eph_counts.keys()))
-            warnings.warn(
-                f"Missing central ephemeris for satellites: {summary}. "
-                "Satellite positions set to NaN.",
-                RuntimeWarning,
-            )
+    _emit_warnings(system_label, missing_eph, calculation_failed)
 
     return pl.DataFrame(
         {
@@ -120,7 +148,6 @@ def satellite_coordinates(
     sv_ids: pl.Series,
     epochs: pl.Series,
     ephem_dict: dict[str, Union[dict[str, Any], list[dict[str, Any]]]],
-    gnss_system: Literal["GPS", "Galileo", "QZSS", "BeiDou", "GLONASS"],
     **kwargs: Any,
 ) -> pl.DataFrame:
     """
@@ -139,8 +166,6 @@ def satellite_coordinates(
         Dictionary containing ephemeris data
         Expected format: {sv_id: dict} for Keplerian systems or {sv_id: list[dict]}
         for GLONASS.
-    gnss_system : str
-        GNSS constellation identifier ('GPS', 'Galileo', 'QZSS', 'BeiDou', 'GLONASS')
     **kwargs : Any
         Additional parameters for GLONASS state-vector propagation:
         - t_res : float or None, optional
@@ -161,35 +186,81 @@ def satellite_coordinates(
         DataFrame with columns: 'sv', 'epoch', 'sat_x', 'sat_y', 'sat_z'
         containing satellite ECEF coordinates in meters
     """
+    unique_svs = sv_ids.unique().to_list()
+    systems_in_data = {sv[0] for sv in unique_svs if sv[0] in PREFIX_MAP}
 
-    if gnss_system == "GLONASS":
-        eph_list = []
-        for sv_ in ephem_dict:
-            eph_list.extend(ephem_dict[sv_])
+    results = []
 
-        df_ = pl.DataFrame({"sv": sv_ids, "epoch": epochs}).sort("epoch")
-        df_eph = pl.DataFrame(eph_list).sort("datetime")
+    for prefix in systems_in_data:
+        system_name = PREFIX_MAP[prefix]
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message="Sortedness of columns cannot be checked when 'by' groups provided",
+        # Filter data for the current system
+        mask = sv_ids.str.starts_with(prefix)
+        sys_sv_ids = sv_ids.filter(mask)
+        sys_epochs = epochs.filter(mask)
+
+        if system_name == "GLONASS":
+            # State-vector logic (DataFrame join_asof)
+            eph_list = []
+            for sv_ in ephem_dict:
+                if sv_.startswith("R"):
+                    # Ensure SV ID is present in the dictionaries for joining
+                    for record in ephem_dict[sv_]:  # type: ignore
+                        record["sv"] = sv_
+                        eph_list.append(record)
+
+            df_obs = pl.DataFrame({"sv": sys_sv_ids, "epoch": sys_epochs}).sort("epoch")
+            df_eph = pl.DataFrame(eph_list).sort("datetime")
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message="Sortedness of columns cannot be checked when 'by' groups provided",
+                )
+                df_joined = df_obs.join_asof(
+                    df_eph,
+                    left_on="epoch",
+                    right_on="datetime",
+                    by="sv",
+                    strategy="nearest",
+                    tolerance="45m",
+                )
+
+            res = _compute_coordinates(
+                sys_sv_ids,
+                sys_epochs,
+                df_joined,
+                _state_vector_satellite_coordinates,
+                **kwargs,
             )
-            df_joined = df_.join_asof(
-                df_eph,
-                left_on="epoch",
-                right_on="datetime",
-                by="sv",
-                strategy="nearest",
-                tolerance="45m",
-            )
+            results.append(res)
 
-        return _compute_coordinates(
-            sv_ids, epochs, df_joined, _state_vector_satellite_coordinates, **kwargs
+        else:
+            # Keplerian logic (Dictionary lookup)
+            # We filter the global ephem_dict to pass only relevant satellites
+            sys_ephem_dict = {
+                k: v for k, v in ephem_dict.items() if k.startswith(prefix)
+            }
+
+            res = _compute_coordinates(
+                sys_sv_ids,
+                sys_epochs,
+                sys_ephem_dict,
+                _kepler_satellite_coordinates,
+                gnss_system_internal=system_name,
+                **kwargs,
+            )
+            results.append(res)
+
+    if not results:
+        return pl.DataFrame(
+            schema={
+                "sv": pl.String,
+                "epoch": pl.Datetime,
+                "sat_x": pl.Float64,
+                "sat_y": pl.Float64,
+                "sat_z": pl.Float64,
+            }
         )
 
-    else:
-        coord_func = lambda ephem, sv, t, **kw: _kepler_satellite_coordinates(
-            ephem, sv, gnss_system, t, **kw
-        )
-        return _compute_coordinates(sv_ids, epochs, ephem_dict, coord_func, **kwargs)
+    return pl.concat(results).sort("epoch")

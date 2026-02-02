@@ -1,144 +1,155 @@
 import polars as pl
-from typing import Optional, Literal, Union
+from typing import Optional, Literal, Any
 
 from .constants import FREQ_BANDS
 from .observables import retrieve_observable_pairs, _extract_band
 from .gflc import _calculate_gflc_code, _calculate_gflc_phase
 from .iflc import _calculate_iflc_code, _calculate_iflc_phase
 from .mw import _calculate_melbourne_wubbena
+from pytecgg.context import GNSSContext
 
 
 def calculate_linear_combinations(
     obs_data: pl.DataFrame,
-    system: Literal["G", "E", "C", "R"],
-    rinex_version: str,
+    ctx: GNSSContext,
     combinations: list[
         Literal["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]
     ] = ["gflc_phase", "gflc_code", "mw"],
     glonass_freq: Optional[dict[str, int]] = None,
-) -> tuple[pl.DataFrame, Union[float, pl.Series], Union[float, pl.Series]]:
+) -> tuple[pl.DataFrame, dict[str, Any]]:
     """
-    Process observations for a specific GNSS system to calculate specific linear combinations
+    Process observations for multiple GNSS systems to calculate specific linear combinations
 
-    Parameters:
-        obs_data (pl.DataFrame): DataFrame containing observation data
-        system (Literal["G", "E", "C", "R"]): GNSS system identifier
-        rinex_version (str): RINEX version string (e.g., '2.11', '3.04')
-        combinations (list[Literal["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]]):
-            List of combinations to calculate. Options:
-                - "gflc_phase": Geometry-Free Linear Combination (Phase)
-                - "gflc_code": Geometry-Free Linear (Code)
-                - "mw": Melbourne-Wübbena combination
-                - "iflc_phase": Ionosphere-Free Linear Combination (Phase)
-                - "iflc_code": Ionosphere-Free Linear Combination (Code)
-            Defaults to ["gflc_phase", "gflc_code", "mw"]
-        glonass_freq (Optional[dict[str, int]]): Frequency mapping for GLONASS, required if system is "R"
+    Parameters
+    ----------
+    obs_data : pl.DataFrame
+        DataFrame containing observation data.
+    ctx : GNSSContext
+        Execution context containing GNSS systems, RINEX version, and support lookups.
+    combinations : list[Literal["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]]
+        List of combinations to calculate. Options:
+            - "gflc_phase": Geometry-Free Linear Combination (Phase)
+            - "gflc_code": Geometry-Free Linear (Code)
+            - "mw": Melbourne-Wübbena combination
+            - "iflc_phase": Ionosphere-Free Linear Combination (Phase)
+            - "iflc_code": Ionosphere-Free Linear Combination (Code)
+        Defaults to ["gflc_phase", "gflc_code", "mw"]
 
-    Returns:
-        tuple[pl.DataFrame, Union[float, pl.Series], Union[float, pl.Series]]:
-            - DataFrame with the requested linear combinations
-            - freq1: Frequency of the first band (Hz). For GLONASS, this is a Series
-            - freq2: Frequency of the second band (Hz). For GLONASS, this is a Series
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with the requested linear combinations.
     """
-    # Select best observable pairs
-    best_pairs = retrieve_observable_pairs(
-        obs_data, system=system, rinex_version=rinex_version, prefer_by_suffix=True
-    )
-    if best_pairs is None:
-        print(f"No suitable observable pairs found for {system}")
-        return pl.DataFrame(), 0.0, 0.0
+    results = []
 
-    (phase1, phase2), (code1, code2) = best_pairs
-
-    df_sys = obs_data.filter(
-        (pl.col("sv").str.starts_with(system))
-        & (pl.col("observable").is_in([phase1, phase2, code1, code2]))
-    )
-
-    if df_sys.is_empty():
-        return pl.DataFrame(), 0.0, 0.0
-
-    # Pivot to get phase and code in separate columns
-    df_pivot = df_sys.pivot(
-        values="value",
-        index=["epoch", "sv"],
-        columns="observable",
-        aggregate_function="first",
-    )
-
-    # Check if we have all required observations
-    required_cols = {phase1, phase2, code1, code2}
-    if not required_cols.issubset(df_pivot.columns):
-        missing = required_cols - set(df_pivot.columns)
-        print(f"Warning: Missing observations: {missing}")
-        return pl.DataFrame(), 0.0, 0.0
-
-    if system == "R":
-        if glonass_freq is None:
-            raise ValueError("glonass_freq is required for GLONASS processing")
-        df_pivot = df_pivot.with_columns(
-            pl.col("sv").replace(glonass_freq).cast(pl.Float32).alias("freq_number")
+    for system_ in ctx.systems:
+        best_pairs = retrieve_observable_pairs(
+            obs_data,
+            system=system_,
+            rinex_version=ctx.rinex_version,
+            prefer_by_suffix=True,
         )
-        f1_fun = FREQ_BANDS["R"][_extract_band(phase1)]
-        f2_fun = FREQ_BANDS["R"][_extract_band(phase2)]
-        freq1 = f1_fun(pl.col("freq_number"))
-        freq2 = f2_fun(pl.col("freq_number"))
 
-    elif system in ["G", "E", "C"]:
-        band1 = _extract_band(phase1)
-        band2 = _extract_band(phase2)
-        try:
-            freq1 = FREQ_BANDS[system][band1]
-            freq2 = FREQ_BANDS[system][band2]
-        except KeyError as e:
-            raise KeyError(
-                f"Missing frequency for band '{e.args[0]}' in system '{system}'"
+        if best_pairs is None:
+            continue
+
+        (phase1, phase2), (code1, code2) = best_pairs
+
+        df_sys = obs_data.filter(
+            (pl.col("sv").str.starts_with(system_))
+            & (pl.col("observable").is_in([phase1, phase2, code1, code2]))
+        )
+
+        if df_sys.is_empty():
+            continue
+
+        df_pivot = df_sys.pivot(
+            values="value",
+            index=["epoch", "sv"],
+            on="observable",
+            aggregate_function="first",
+        )
+
+        required_cols = {phase1, phase2, code1, code2}
+        if not required_cols.issubset(df_pivot.columns):
+            continue
+
+        if system_ == "R":
+            # GLONASS frequencies are SV-dependent based on the channel lookup
+            if not ctx.glonass_channels:
+                continue
+
+            # Map GLONASS channels to frequencies per SV
+            f1_map = FREQ_BANDS["R"][_extract_band(phase1)]
+            f2_map = FREQ_BANDS["R"][_extract_band(phase2)]
+
+            # Metadata in MHz
+            ctx.freq_meta[system_] = {
+                sv: (f1_map(k) / 1e6, f2_map(k) / 1e6)
+                for sv, k in ctx.glonass_channels.items()
+                if k is not None
+            }
+
+            df_step = df_pivot.with_columns(
+                pl.col("sv").replace(ctx.glonass_channels).cast(pl.Float32).alias("_k")
+            )
+            freq1, freq2 = f1_map(pl.col("_k")), f2_map(pl.col("_k"))
+        else:
+            try:
+                f1 = FREQ_BANDS[system_][_extract_band(phase1)]
+                f2 = FREQ_BANDS[system_][_extract_band(phase2)]
+
+                # MHz for metadata
+                ctx.freq_meta[system_] = (f1 / 1e6, f2 / 1e6)
+                freq1, freq2 = pl.lit(f1), pl.lit(f2)
+                df_step = df_pivot
+            except KeyError:
+                continue
+
+        # Linear combinations calculation
+        if "gflc_phase" in combinations:
+            df_step = df_step.with_columns(
+                _calculate_gflc_phase(
+                    pl.col(phase1), pl.col(phase2), freq1, freq2
+                ).alias("gflc_phase")
+            )
+        if "gflc_code" in combinations:
+            df_step = df_step.with_columns(
+                _calculate_gflc_code(pl.col(code1), pl.col(code2), freq1, freq2).alias(
+                    "gflc_code"
+                )
+            )
+        if "mw" in combinations:
+            df_step = df_step.with_columns(
+                _calculate_melbourne_wubbena(
+                    pl.col(phase1),
+                    pl.col(phase2),
+                    pl.col(code1),
+                    pl.col(code2),
+                    freq1,
+                    freq2,
+                ).alias("mw")
+            )
+        if "iflc_phase" in combinations:
+            df_step = df_step.with_columns(
+                _calculate_iflc_phase(
+                    pl.col(phase1), pl.col(phase2), freq1, freq2
+                ).alias("iflc_phase")
+            )
+        if "iflc_code" in combinations:
+            df_step = df_step.with_columns(
+                _calculate_iflc_code(pl.col(code1), pl.col(code2), freq1, freq2).alias(
+                    "iflc_code"
+                )
             )
 
-    df_result = df_pivot
+        drop_cols = list(required_cols)
+        if "_k" in df_step.columns:
+            drop_cols.append("_k")
 
-    if "gflc_phase" in combinations:
-        df_result = df_result.with_columns(
-            _calculate_gflc_phase(pl.col(phase1), pl.col(phase2), freq1, freq2).alias(
-                "gflc_phase"
-            )
-        )
+        results.append(df_step.drop(drop_cols))
 
-    if "gflc_code" in combinations:
-        df_result = df_result.with_columns(
-            _calculate_gflc_code(pl.col(code1), pl.col(code2), freq1, freq2).alias(
-                "gflc_code"
-            )
-        )
+    if not results:
+        return pl.DataFrame()
 
-    if "mw" in combinations:
-        df_result = df_result.with_columns(
-            _calculate_melbourne_wubbena(
-                pl.col(phase1),
-                pl.col(phase2),
-                pl.col(code1),
-                pl.col(code2),
-                freq1,
-                freq2,
-            ).alias("mw")
-        )
-
-    if "iflc_phase" in combinations:
-        df_result = df_result.with_columns(
-            _calculate_iflc_phase(pl.col(phase1), pl.col(phase2), freq1, freq2).alias(
-                "iflc_phase"
-            )
-        )
-
-    if "iflc_code" in combinations:
-        df_result = df_result.with_columns(
-            _calculate_iflc_code(pl.col(code1), pl.col(code2), freq1, freq2).alias(
-                "iflc_code"
-            )
-        )
-
-    drop_cols = [phase1, phase2, code1, code2]
-    if system == "R":
-        drop_cols.append("freq_number")
-
-    return df_result.drop(drop_cols), freq1, freq2
+    return pl.concat(results)

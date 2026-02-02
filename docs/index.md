@@ -28,11 +28,12 @@ Why calibration matters? Because without it, you don’t actually know the true 
 
 This package:
 
-- is open source: read and access all the code!
-- supports all modern GNSS constellations, codes and signals:
-    - GPS, Galileo, BeiDou, GLONASS
-- supports RINEX V2-3-4
-- provides seamless decompression for RINEX files
+- Is open source: read and access [all the code](https://github.com/viventriglia/PyTECGg).
+- Supports all modern GNSS constellations:
+    - GPS, Galileo, BeiDou, GLONASS.
+- Supports RINEX 2, 3 and 4.
+- Provides seamless decompression for RINEX files:
+    - No need to preprocess your Hatanaka-compressed files.
 
 <!-- TODO -->
 <!-- !!! info "Citing PyTECGg"

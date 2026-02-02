@@ -16,7 +16,7 @@ from pytecgg.satellites.kepler.orbits import (
 def _kepler_satellite_coordinates(
     ephem_dict: dict[str, dict[str, Any]],
     sv_id: str,
-    gnss_system: Literal["GPS", "Galileo", "QZSS", "BeiDou"],
+    gnss_system: Literal["GPS", "GALILEO", "BEIDOU"],
     obs_time: datetime.datetime | None = None,
 ) -> np.ndarray:
     """
@@ -29,8 +29,8 @@ def _kepler_satellite_coordinates(
         Dictionary containing ephemeris data
     sv_id : str
         Satellite identifier (e.g., 'E23')
-    gnss_system : Literal["GPS", "Galileo", "QZSS", "BeiDou"]
-        GNSS constellation ('GPS', 'Galileo', 'QZSS' or 'BeiDou')
+    gnss_system : Literal["GPS", "GALILEO", "BEIDOU"]
+        GNSS constellation
     obs_time : datetime.datetime | None, optional
         Optional observation time (datetime); if None, uses ephemeris timestamp
 
@@ -42,7 +42,7 @@ def _kepler_satellite_coordinates(
     """
     if gnss_system not in GNSS_CONSTANTS:
         raise ValueError(
-            "Unsupported GNSS system: choose one of ['GPS', 'Galileo', 'QZSS', 'BeiDou']"
+            "Unsupported GNSS system: choose one of ['GPS', 'GALILEO', 'BEIDOU']"
         )
 
     const = GNSS_CONSTANTS[gnss_system]

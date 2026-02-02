@@ -47,5 +47,5 @@ CODE_FREQ_PRIORITY = {
 }
 
 # Priorities for channel suffixes
-PHASE_CHAN_PRIORITY = ["C", "W", "X", "P"]
-CODE_CHAN_PRIORITY = ["C", "W", "X", "P"]
+PHASE_CHAN_PRIORITY = ["C", "L", "S", "I", "Q", "W", "X", "P"]
+CODE_CHAN_PRIORITY = ["C", "L", "S", "I", "Q", "W", "X", "P"]

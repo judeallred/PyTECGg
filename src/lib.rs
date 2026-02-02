@@ -1,9 +1,14 @@
 use pyo3::prelude::*;
+use pyo3_polars::PyDataFrame;
 use rinex::prelude::*;
 use polars::prelude::*;
-use pyo3_polars::PyDataFrame;
 use std::path::Path;
-use std::collections::{BTreeSet, BTreeMap};
+use std::collections::BTreeMap;
+
+/// Constant offset between J1900 (hifitime default) and Unix Epoch (1970) in microseconds,
+/// including the 19s constant offset between TAI and GPST.
+/// This ensures RINEX epochs align with the "round" 00/30s grid in Polars/Unix time.
+const UNIX_GPST_OFFSET_MICROS: i64 = 2_208_988_819_000_000;
 
 /// Helper function to read a RINEX file (supports regular, compressed, and gzipped RINEX files)
 fn _parse_file<P: AsRef<Path>>(path: P) -> Result<Rinex, ParsingError> {
@@ -49,45 +54,46 @@ fn read_rinex_obs(path: &str) -> PyResult<(PyDataFrame, (f64, f64, f64), String)
         ))?;
 
     if !rinex.is_observation_rinex() {
-        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-            "This is not a RINEX Observation file",
-        ));
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Not an OBS file"));
     }
 
-    // Extract approximate rx coordinates (ECEF) and RINEX version
     let (x, y, z) = rinex.header.rx_position.unwrap_or((f64::NAN, f64::NAN, f64::NAN));
     let version = rinex.header.version.to_string();
 
-    let mut epochs = Vec::new();
-    let mut prns = Vec::new();
-    let mut codes = Vec::new();
-    let mut values = Vec::new();
+    let est_capacity = 250_000;
+    let mut epochs = Vec::with_capacity(est_capacity);
+    let mut prns = Vec::with_capacity(est_capacity);
+    let mut codes = Vec::with_capacity(est_capacity);
+    let mut values = Vec::with_capacity(est_capacity);
 
-    // Access the record containing observation data
     match &rinex.record {
         Record::ObsRecord(obs_data) => {
             for (obs_key, observations) in obs_data.iter() {
+                // Bypass UTC leap second adjustments to preserve original GPST grid.
+                let total_micros = (obs_key.epoch.to_duration_since_j1900().to_seconds() * 1_000_000.0) as i64;
+                let ts = total_micros - UNIX_GPST_OFFSET_MICROS;
+
                 for signal in &observations.signals {
-                    epochs.push(obs_key.epoch.to_string());
+                    epochs.push(ts);
                     prns.push(signal.sv.to_string());
                     codes.push(signal.observable.to_string());
                     values.push(signal.value);
                 }
             }
         },
-        _ => {
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                "File does not contain observation data",
-            ));
-        }
+        _ => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("No obs data")),
     }
 
-    let df = df![
-        "epoch" => &epochs,
-        "sv" => &prns,
-        "observable" => &codes,
-        "value" => &values,
-    ]
+    let epoch_series = Series::new("epoch".into(), epochs)
+        .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
+    let df = DataFrame::new(vec![
+        epoch_series.into(),
+        Series::new("sv".into(), prns).into(),
+        Series::new("observable".into(), codes).into(),
+        Series::new("value".into(), values).into(),
+    ])
     .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
     Ok((PyDataFrame(df), (x, y, z), version))
@@ -106,124 +112,76 @@ fn read_rinex_obs(path: &str) -> PyResult<(PyDataFrame, (f64, f64, f64), String)
 #[pyfunction]
 #[pyo3(text_signature = "(path, /)")]
 fn read_rinex_nav(path: &str) -> PyResult<BTreeMap<String, PyDataFrame>> {
-    let path = Path::new(path);
-    
-    if !path.exists() {
-        return Err(PyErr::new::<pyo3::exceptions::PyFileNotFoundError, _>(
-            format!("File not found: {}", path.display())
-        ));
-    }
+    let path_obj = Path::new(path);
+    let rinex = _parse_file(path_obj).map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(format!("{}", e)))?;
 
-    let rinex = _parse_file(path)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(
-            format!("RINEX parsing error: {}", e)
-        ))?;
-
-    if !rinex.is_navigation_rinex() {
-        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-            "This is not a RINEX Navigation file",
-        ));
-    }
-
-    // Map from constellation names to their data
-    let mut constellation_data: BTreeMap<String, Vec<BTreeMap<String, f64>>> = BTreeMap::new();
-    let mut constellation_times: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut storage: BTreeMap<String, BTreeMap<String, Vec<Option<f64>>>> = BTreeMap::new();
+    let mut constellation_times: BTreeMap<String, Vec<i64>> = BTreeMap::new();
     let mut constellation_svs: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
     for (nav_key, ephemeris) in rinex.nav_ephemeris_frames_iter() {
-        let constellation = match nav_key.sv.constellation {
+        let constel = match nav_key.sv.constellation {
             Constellation::GPS => "GPS",
             Constellation::Glonass => "GLONASS",
-            Constellation::Galileo => "Galileo",
-            Constellation::BeiDou => "BeiDou",
-            Constellation::QZSS => "QZSS",
-            Constellation::IRNSS => "IRNSS",
-            Constellation::SBAS => "SBAS",
-            _ => "Unknown",
+            Constellation::Galileo => "GALILEO",
+            Constellation::BeiDou => "BEIDOU",
+            // Constellation::QZSS => "QZSS",
+            // Constellation::IRNSS => "IRNSS",
+            // Constellation::SBAS => "SBAS",
+            // _ => "OTHER", // Uncomment to include other constellations
+            _ => continue, // Skip unsupported constellations
         }.to_string();
+        
+        let (y, m, d, hh, mm, ss, ns) = nav_key.epoch.to_gregorian(nav_key.epoch.time_scale);
+        let forced_epoch = Epoch::from_gregorian(y, m, d, hh, mm, ss, ns, TimeScale::GPST);
+        let total_micros = (forced_epoch.to_duration_since_j1900().to_seconds() * 1_000_000.0) as i64;
+        let ts = total_micros - UNIX_GPST_OFFSET_MICROS;
 
-        let sv_id = nav_key.sv.prn.to_string();
-        let epoch_str = nav_key.epoch.to_string();
+        constellation_times.entry(constel.clone()).or_default().push(ts);
+        constellation_svs.entry(constel.clone()).or_default().push(nav_key.sv.prn.to_string());
 
-        // Create a map for the parameters
-        let mut params = BTreeMap::new();
+        let params_map = storage.entry(constel.clone()).or_default();
+        
+        params_map.entry("clock_bias".into()).or_default().push(Some(ephemeris.clock_bias));
+        params_map.entry("clock_drift".into()).or_default().push(Some(ephemeris.clock_drift));
+        params_map.entry("clock_drift_rate".into()).or_default().push(Some(ephemeris.clock_drift_rate));
 
-        // Add clock parameters
-        params.insert("clock_bias".to_string(), ephemeris.clock_bias);
-        params.insert("clock_drift".to_string(), ephemeris.clock_drift);
-        params.insert("clock_drift_rate".to_string(), ephemeris.clock_drift_rate);
-
-        // Add all available orbital parameters
         for (key, value) in &ephemeris.orbits {
-            params.insert(key.to_string(), value.as_f64());
+            params_map.entry(key.to_string()).or_default().push(Some(value.as_f64()));
         }
 
-        // Initialise data structures for the constellation if not already present
-        constellation_data.entry(constellation.clone())
-            .or_insert_with(Vec::new)
-            .push(params);
-        constellation_times.entry(constellation.clone())
-            .or_insert_with(Vec::new)
-            .push(epoch_str);
-        constellation_svs.entry(constellation.clone())
-            .or_insert_with(Vec::new)
-            .push(sv_id);
+        let current_len = constellation_times.get(&constel).unwrap().len();
+        for vec in params_map.values_mut() {
+            if vec.len() < current_len {
+                vec.push(None);
+            }
+        }
     }
 
-    // Create DataFrames for each constellation
     let mut result = BTreeMap::new();
-    
-    for (constellation, data) in constellation_data {
-        let times = &constellation_times[&constellation];
-        let svs = &constellation_svs[&constellation];
-        
-        // Collect all unique parameter names across
-        let mut all_params = BTreeSet::new();
-        for params in &data {
-            for param_name in params.keys() {
-                all_params.insert(param_name.clone());
-            }
-        }
+    for (constel, columns) in storage {
+        let times = constellation_times.remove(&constel).unwrap();
+        let svs = constellation_svs.remove(&constel).unwrap();
 
-        // Crea a serries for each parameter
-        let mut series_map: BTreeMap<String, Vec<Option<f64>>> = BTreeMap::new();
-        for param in &all_params {
-            series_map.insert(param.clone(), Vec::new());
-        }
-
-        // Populate the series
-        for params in &data {
-            for param in &all_params {
-                let value = params.get(param).copied();
-                series_map.get_mut(param).unwrap().push(value);
-            }
-        }
-
-        // Create the DataFrame
-        let mut df_builder = df! {
-            "epoch" => times,
-            "sv" => svs,
-        }.map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-
-        // Add all parameters as columns
-        for (param_name, values) in series_map {
-            let mut series: Series = values.into_iter()
-                .map(|opt| opt.map(|v| v as f64))
-                .collect::<Float64Chunked>()
-                .into_series();
-            series.rename(param_name.into());
-            df_builder.with_column(series)
-                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        }
-
-        // Set the multi-index with (epoch, sv)
-        df_builder = df_builder
-            .lazy()
-            .with_row_index("row_id", None)
-            .collect()
+        let epoch_series = Series::new("epoch".into(), times)
+            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        
+        let mut df = DataFrame::new(vec![
+            epoch_series.into(),
+            Series::new("sv".into(), svs).into(),
+        ]).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
-        result.insert(constellation, PyDataFrame(df_builder));
+        for (name, values) in columns {
+            let mut final_values = values;
+            while final_values.len() < df.height() {
+                final_values.push(None);
+            }
+            let s = Series::new(name.into(), final_values);
+            df.with_column(s).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        }
+
+        result.insert(constel, PyDataFrame(df));
     }
 
     Ok(result)
