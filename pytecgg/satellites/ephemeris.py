@@ -33,14 +33,14 @@ def prepare_ephemeris(nav: dict[str, pl.DataFrame], ctx: GNSSContext) -> Ephem:
         velocity/acceleration) valid only for short periods (typically ± 15 minutes),
         requiring numerical integration from the closest epoch.
 
-    Parameters:
+    Parameters
     ----------
     nav : dict[str, pl.DataFrame]
         Navigation data from RINEX, keyed by constellation name (e.g., 'GPS', 'GLONASS').
     ctx : GNSSContext
         Execution context containing target systems and settings.
 
-    Returns:
+    Returns
     -------
     Ephem
         Dictionary keyed by satellite ID (e.g., 'G01', 'R09').

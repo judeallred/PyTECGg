@@ -196,7 +196,8 @@ def extract_modip(
         Type of input coordinates:
         - "ecef" for ECEF coordinates.
         - "geo" for geographic coordinates; lon, lat expected.
-    Returns:
+
+    Returns
     --------
     np.ndarray
         Interpolated MoDip values for the specified coordinates

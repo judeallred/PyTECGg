@@ -166,8 +166,6 @@ def satellite_coordinates(
         Dictionary containing ephemeris data
         Expected format: {sv_id: dict} for Keplerian systems or {sv_id: list[dict]}
         for GLONASS.
-    gnss_system : str, optional
-        GNSS constellation identifier. If None (default), it is inferred from sv_ids.
     **kwargs : Any
         Additional parameters for GLONASS state-vector propagation:
         - t_res : float or None, optional

@@ -21,31 +21,41 @@ class GNSSContext:
     It handles coordinate validation, constellation name normalisation, and
     maintains metadata required for geometric and frequency-dependent calculations.
 
-    Attributes:
-        receiver_pos (tuple[float, float, float]): Receiver coordinates in the
-            Earth-Centered, Earth-Fixed (ECEF) frame, expressed in meters (X, Y, Z).
-        receiver_name (str): Station identifier. Automatically normalised to
-            lowercase and truncated to the first 4 characters (standard RINEX style).
-        rinex_version (str): The version of the source RINEX file (e.g., "2.11", "3.04").
-        h_ipp (float): The altitude of the thin-shell ionospheric model in meters.
-            Default is 350,000 m (350 km).
-        systems (list[str]): List of active GNSS constellations, accepting full names
-            (e.g., 'Galileo') or symbols ('E').
-        glonass_channels (dict[str, int]): Mapping of frequency channels for
-            GLONASS satellites (e.g., {'R01': 1}). This attribute gets populated
-            during ephemeris parsing.
-        freq_meta (dict[str, Any]): Additional metadata related to signal
-            frequencies and observation types used during processing.
+    Attributes
+    ----------
+    receiver_pos : tuple[float, float, float]
+        Receiver coordinates in the Earth-Centered, Earth-Fixed (ECEF) frame,
+        expressed in meters (X, Y, Z).
+    receiver_name : str
+        Station identifier. Automatically normalised to lowercase and truncated
+        to the first 4 characters (standard RINEX style).
+    rinex_version : str
+        The version of the source RINEX file (e.g., "2.11", "3.04").
+    h_ipp : float
+        The altitude of the thin-shell ionospheric model in meters.
+        Default is 350,000 m (350 km).
+    systems : list[str]
+        List of active GNSS constellations, accepting full names
+        (e.g., 'Galileo') or symbols ('E').
+    glonass_channels : dict[str, int]
+        Mapping of frequency channels for GLONASS satellites
+        (e.g., {'R01': 1}). This attribute gets populated during ephemeris parsing.
+    freq_meta : dict[str, Any]
+        Additional metadata related to signal
+        frequencies and observation types used during processing.
 
-    Notes:
-        The class performs validation and sanitisation steps during `__post_init__`:
-        * Validates that `receiver_pos` is a 3-element numeric structure.
-        * Maps constellation names to standard symbols of supported constellations.
-        * Issues a `UserWarning` if `h_ipp` falls outside the typical geophysical
-            range of [250, 500] km.
-        * Ensures at least one valid GNSS system is specified for processing.
+    Notes
+    -----
+    The class performs validation and sanitisation steps during `__post_init__`:
 
-    Example:
+    * Validates that `receiver_pos` is a 3-element numeric structure.
+    * Maps constellation names to standard symbols of supported constellations.
+    * Issues a `UserWarning` if `h_ipp` falls outside the typical geophysical
+        range of [250, 500] km.
+    * Ensures at least one valid GNSS system is specified for processing.
+
+    Examples
+    --------
         >>> ctx = GNSSContext(
         ...     receiver_pos=(4444444.0, 1111111.0, 1234567.0),
         ...     receiver_name="GROT",
