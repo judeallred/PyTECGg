@@ -7,6 +7,11 @@ from .constants import CONSTELLATION_PARAMS, GPS_EPOCH
 from pytecgg.context import GNSSContext
 
 Ephem = dict[str, dict[str, Any] | list[dict[str, Any]]]
+"""Type alias for a dictionary containing processed ephemeris data.
+
+It maps satellite IDs (e.g., 'G01') to their specific orbital parameters, 
+handling both Keplerian (single dict) and state-vector (list of dicts) models.
+"""
 
 
 def _get_gps_time(dt: datetime) -> tuple[int, float]:

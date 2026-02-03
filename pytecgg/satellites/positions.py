@@ -153,7 +153,7 @@ def satellite_coordinates(
     """
     Compute Earth-Centered Earth-Fixed (ECEF) coordinates for GNSS satellites.
 
-    The function supports GPS, Galileo, QZSS, BeiDou (using Keplerian orbits)
+    The function supports GPS, Galileo, BeiDou (using Keplerian orbits)
     and GLONASS (using state-vector propagation).
 
     Parameters
