@@ -62,9 +62,11 @@ plugins:
       handlers:
         python:
           options:
-            docstring_style: google
-            show_if_no_docstring: false
-            inherited_members: true
+            show_root_heading: true
+            show_source: false
+            docstring_style: numpy
+          paths:
+            - "."
 
 nav:
   - Home: index.md
@@ -72,12 +74,14 @@ nav:
   - Contributing: contributing.md
   - Quickstart:
       - Parsing RINEX: quickstart/parsing.md
-      - Linear combinations: quickstart/linear-combinations.md
-      - TEC Arcs: quickstart/arcs.md
-      - Satellite coordinates and IPP: quickstart/ipp.md
-      - TEC calibration: quickstart/tec-calibration.md
-      - RINEX utilities: quickstart/download-rinex.md
-  # - API Reference:
-  #     - Parsing: reference/parsing.md
-  #     - Satellites: reference/satellites.md
-  #     - Calibration: reference/calibration.md
+      - Linear Combinations & TEC Arcs: quickstart/lin-comb-tec-arcs.md
+      - Satellite Coordinates & IPP: quickstart/ipp.md
+      - TEC Calibration: quickstart/tec-calibration.md
+      - Batch Calibration: quickstart/batch-calibration.md
+      - RINEX Utilities: quickstart/download-rinex.md
+  - API Reference:
+      - Parsing: reference/parsing.md
+      - Context: reference/context.md
+      - Satellites & Geometry: reference/satellites.md
+      - TEC Calibration: reference/tec_calibration.md
+      - RINEX Utilities: reference/utils.md
