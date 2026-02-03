@@ -6,48 +6,66 @@ def summarise_rinex_data(
     nav: dict[str, pl.DataFrame],
 ) -> None:
     """
-    Prints a summary of RINEX GNSS observation and navigation data.
+    Print a diagnostic summary of GNSS RINEX data.
+
+    This utility provides a high-level overview of the dataset's temporal coverage,
+    constellation and signal availability. It is designed to help users
+    verify if the loaded observations contain the desidered frequency pairs and tracking
+    channels (e.g., C, L, S, I, Q) required for accurate TEC calibration.
+
+    Parameters
+    ----------
+    obs : pl.DataFrame
+        Observation data in long format, as returned by `read_rinex_obs`.
+    nav : dict[str, pl.DataFrame]
+        Navigation data dictionary keyed by constellation symbol, as returned
+        by `read_rinex_nav`.
+
+    Returns
+    -------
+    None
+        The summary is printed directly to the standard output.
     """
     print("=" * 55)
     print("🛰️  GNSS RINEX DATA SUMMARY")
     print("=" * 55)
 
     epochs = obs["epoch"].unique().sort()
-    start_t = epochs.min()
-    end_t = epochs.max()
+    start_t, end_t = epochs.min(), epochs.max()
     duration = end_t - start_t
     sampling = epochs.diff().median()
 
-    print(f"\n📅 Observations:")
+    print(f"\n📅 Temporal Coverage (OBS)\n")
     print(f"   - Start:    {start_t}")
     print(f"   - End:      {end_t}")
     print(f"   - Duration: {duration}")
     print(f"   - Sampling: {sampling.total_seconds() if sampling else 'N/A'}s")
 
-    print(f"\n📡 Constellations Breakdown:")
+    print(f"\n📡 Constellations Breakdown (OBS)\n")
     const_stats = (
         obs.with_columns(pl.col("sv").str.slice(0, 1).alias("const"))
         .group_by("const")
         .agg(
             [
-                pl.col("sv").n_unique().alias("unique_svs"),
-                pl.col("value").count().alias("total_obs"),
-                pl.col("observable").n_unique().alias("unique_signals"),
+                pl.col("sv").n_unique().alias("svs"),
+                pl.col("observable").unique().sort().alias("signals"),
+                pl.count().alias("records"),
             ]
         )
         .sort("const")
     )
 
-    header = f"{'Sys':<5} | {'SVs':<5} | {'# Observables':<15} | {'Total Records':<15}"
+    header = f"{'Sys':<4} | {'SVs':<4} | {'Total Records':<15} | {'Available Signals'}"
     print(header)
     print("-" * len(header))
 
     for row in const_stats.to_dicts():
+        signals_str = ", ".join(row["signals"])
         print(
-            f"{row['const']:<5} | {row['unique_svs']:<5} | {row['unique_signals']:<15} | {row['total_obs']:,}"
+            f"{row['const']:<4} | {row['svs']:<4} | {row['records']:<15,} | {signals_str}"
         )
 
-    print(f"\n📖 Navigation Coverage (Ephemerides):")
+    print(f"\n📖 Ephemeris Coverage (NAV)\n")
     for const, df_nav in nav.items():
         nav_svs = df_nav["sv"].n_unique()
-        print(f"   - {const:<8}: {nav_svs:>3} satellites with valid ephemeris")
+        print(f"   - {const:<8}: {nav_svs:>3} satellites have at least an ephemeris")

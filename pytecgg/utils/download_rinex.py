@@ -91,16 +91,16 @@ def download_obs_ring(
     Download RINEX observation files (Hatanaka crx.gz) from the INGV RING server.
 
     Automatically handles station code conversion (e.g., converts 4-character
-    codes like 'toli' to 'toli00ITA') and organizes files into station-specific
+    codes like 'GRO2' to 'GRO200ITA') and organizes files into station-specific
     subdirectories.
 
     Parameters
     ----------
     station_code : str
-        The station identifier (4 or 9 characters). Example: 'toli' or 'TOLI00ITA'.
+        The station identifier (4 or 9 characters). Example: 'GRO2' or 'GRO200ITA'.
     year : int
         The observation year (e.g., 2023).
-    doys : List[int]
+    doys : list[int]
         A list of Days Of Year (DOY), e.g., [1, 2, 3].
     output_path : Path
         The root directory where the files will be saved.
