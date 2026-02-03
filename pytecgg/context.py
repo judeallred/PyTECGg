@@ -7,8 +7,8 @@ SUPPORTED_SYSTEMS = {
     "GLONASS": "R",
     "GALILEO": "E",
     "BEIDOU": "C",
-    "QZSS": "J",
-    "NAVIC": "I",
+    # "QZSS": "J",
+    # "NAVIC": "I",
 }
 
 
@@ -35,8 +35,8 @@ class GNSSContext:
         The altitude of the thin-shell ionospheric model in meters.
         Default is 350,000 m (350 km).
     systems : list[str]
-        List of active GNSS constellations, accepting full names
-        (e.g., 'Galileo') or symbols ('E').
+        List of active GNSS constellations, accepting full names or symbols:
+        GPS (G), GLONASS (R), Galileo (E), BeiDou (C).
     glonass_channels : dict[str, int]
         Mapping of frequency channels for GLONASS satellites
         (e.g., {'R01': 1}). This attribute gets populated during ephemeris parsing.
