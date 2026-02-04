@@ -52,7 +52,8 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.superfences
-  - pymdownx.tabbed
+  - pymdownx.tabbed:
+      alternate_style: true
   - pymdownx.emoji
   - pymdownx.details
 
@@ -73,7 +74,7 @@ nav:
   - Installation: installation.md
   - Contributing: contributing.md
   - Quickstart:
-      - Parsing RINEX: quickstart/parsing.md
+      - Data Ingestion & Setup: quickstart/parsing-and-utils.md
       - Linear Combinations & TEC Arcs: quickstart/lin-comb-tec-arcs.md
       - Satellite Coordinates & IPP: quickstart/ipp.md
       - TEC Calibration: quickstart/tec-calibration.md

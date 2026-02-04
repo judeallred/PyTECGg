@@ -43,6 +43,6 @@ This package:
 
 📥 [**Install**](installation.md)
 
-🚀 [**Quickstart**](quickstart/parsing.md)
+🚀 [**Quickstart**](quickstart/parsing-and-utils.md)
 
 🌱 [**Contribute**](contributing.md)
