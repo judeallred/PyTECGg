@@ -26,14 +26,13 @@ Why calibration matters? Because without it, you don’t actually know the true 
 
 ## Main features
 
-This package:
+This package is designed for researchers and engineers who need speed and reliability.
 
-- Is open source: read and access [all the code](https://github.com/viventriglia/PyTECGg).
-- Supports all modern GNSS constellations:
-    - GPS, Galileo, BeiDou, GLONASS.
-- Supports RINEX 2, 3 and 4.
-- Provides seamless decompression for RINEX files:
-    - No need to preprocess your Hatanaka-compressed files.
+- **Blazing fast**: powered by a [Rust](https://rust-lang.org/) core and [Polars](https://pola.rs/), it is much faster than existing pure-Python implementations when parsing large datasets.
+- **Open source**: read, access, and contribute to [all the code](https://github.com/viventriglia/PyTECGg).
+- **Modern GNSS support**: compatible with GPS, Galileo, BeiDou, GLONASS.
+- **RINEX ready**: supports versions 2, 3, and 4.
+- **Seamless decompression**: built-in support for Hatanaka-compressed files — no need to decompress your data manually.
 
 <!-- TODO -->
 <!-- !!! info "Citing PyTECGg"
