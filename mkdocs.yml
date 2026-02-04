@@ -74,12 +74,10 @@ nav:
   - Installation: installation.md
   - Contributing: contributing.md
   - Quickstart:
-      - Data Ingestion & Setup: quickstart/parsing-and-utils.md
-      - Linear Combinations & TEC Arcs: quickstart/lin-comb-tec-arcs.md
-      - Satellite Coordinates & IPP: quickstart/ipp.md
-      - TEC Calibration: quickstart/tec-calibration.md
-      - Batch Calibration: quickstart/batch-calibration.md
-      - RINEX Utilities: quickstart/download-rinex.md
+      - Data Ingestion & Setup: quickstart/0-data-ingestion-setup.md
+      - Preprocessing & Geometry: quickstart/1-preprocessing-geometry.md
+      - TEC Calibration: quickstart/2-tec-calibration.md
+      - Batch Calibration: quickstart/3-batch-calibration.md
   - API Reference:
       - Parsing: reference/parsing.md
       - Context: reference/context.md

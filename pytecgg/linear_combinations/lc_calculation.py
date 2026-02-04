@@ -1,5 +1,5 @@
 import polars as pl
-from typing import Optional, Literal, Any
+from typing import Literal, Any
 
 from .constants import FREQ_BANDS
 from .observables import retrieve_observable_pairs, _extract_band
@@ -15,7 +15,6 @@ def calculate_linear_combinations(
     combinations: list[
         Literal["gflc_phase", "gflc_code", "mw", "iflc_phase", "iflc_code"]
     ] = ["gflc_phase", "gflc_code", "mw"],
-    glonass_freq: Optional[dict[str, int]] = None,
 ) -> tuple[pl.DataFrame, dict[str, Any]]:
     """
     Process observations for multiple GNSS systems to calculate specific linear combinations
