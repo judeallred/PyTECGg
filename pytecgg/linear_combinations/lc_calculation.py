@@ -76,7 +76,10 @@ def calculate_linear_combinations(
         if system_ == "R":
             # GLONASS frequencies are SV-dependent based on the channel lookup
             if not ctx.glonass_channels:
-                continue
+                raise RuntimeError(
+                    "GLONASS requested but `glonass_channels` is empty in the provided context. "
+                    "Did you forget to call `prepare_ephemeris()`?"
+                )
 
             # Map GLONASS channels to frequencies per SV
             f1_map = FREQ_BANDS["R"][_extract_band(phase1)]
