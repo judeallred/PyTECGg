@@ -3,7 +3,7 @@ import warnings
 
 import numpy as np
 import polars as pl
-from scipy.linalg import qr, solve
+from scipy.linalg import qr, solve, solve_triangular
 from scipy.sparse import csr_matrix
 
 from pytecgg.tec_calibration.calibration_preprocessing import (
@@ -198,6 +198,79 @@ def _estimate_bias(
     return _gg_calibration(df_clean, batch_length_mins=n_epochs, max_degree=max_degree)
 
 
+def _estimate_veq_batches(
+    df_clean: pl.DataFrame,
+    max_degree: int = 3,
+    batch_length_mins: int = 15,
+) -> dict[datetime.datetime, float]:
+    """
+    Internal helper to extract the zenithal coefficient (vEq) per batch.
+
+    Evaluates the ionospheric model at the receiver's location (delta=0).
+
+    Parameters
+    ----------
+    df_clean : pl.DataFrame
+        Preprocessed DataFrame including estimated biases.
+    max_degree : int
+        Polynomial degree.
+    batch_length_mins : int
+        Batch temporal window (in minutes).
+
+    Returns
+    -------
+    dict[datetime.datetime, float]
+        Zenithal TEC values at batch centers.
+    """
+    df_clean = df_clean.sort("epoch")
+    n_coeffs = max_degree + 2
+
+    min_time, max_time = df_clean["epoch"].min(), df_clean["epoch"].max()
+    batch_starts = pl.datetime_range(
+        start=min_time, end=max_time, interval=f"{batch_length_mins}m", eager=True
+    )
+
+    veq_results = {}
+    interval_td = datetime.timedelta(minutes=batch_length_mins)
+
+    for start_time in batch_starts:
+        end_time = start_time + interval_td
+        batch_df = df_clean.filter(
+            (pl.col("epoch") >= start_time) & (pl.col("epoch") < end_time)
+        )
+
+        if batch_df.height < n_coeffs:
+            continue
+
+        # Basis functions for the current batch
+        P = _polynomial_expansion(
+            batch_df["modip_ipp"].to_numpy(),
+            batch_df["modip_rec"].to_numpy(),
+            batch_df["lon_ipp"].to_numpy(),
+            batch_df["lon_rec"].to_numpy(),
+            max_degree,
+        )
+
+        # De-biased observations for model fitting: (levelled - bias) * mapping
+        target = (batch_df["gflc_levelled"] - batch_df["bias"]).to_numpy() * batch_df[
+            "mapping"
+        ].to_numpy()
+
+        # Local model solving via QR
+        triang_mat = qr(np.hstack([P, target.reshape(-1, 1)]), mode="r")[0]
+        R = triang_mat[:n_coeffs, :n_coeffs]
+        rhs = triang_mat[:n_coeffs, -1]
+
+        try:
+            coeffs = solve_triangular(R, rhs)
+            # vEq is the C0 coefficient (zenithal equivalent)
+            veq_results[start_time + interval_td / 2] = coeffs[0]
+        except:
+            continue
+
+    return veq_results
+
+
 def calculate_tec(
     df: pl.DataFrame,
     ctx: GNSSContext,
@@ -270,3 +343,68 @@ def calculate_tec(
             )
         )
     )
+
+
+def calculate_vertical_equivalent(
+    df_calibrated: pl.DataFrame,
+    ctx: GNSSContext,
+    max_polynomial_degree: int = 3,
+    batch_size_epochs: int = 30,
+) -> pl.DataFrame:
+    """
+    Compute the Vertical Equivalent (VEq) series at the station zenith,
+    broadcasting a unique station-wide vertical TEC value for each epoch.
+
+    Parameters
+    ----------
+    df_calibrated : pl.DataFrame
+        DataFrame already processed by calculate_tec().
+    ctx : GNSSContext
+        Context with receiver position and IPP height.
+    max_polynomial_degree : int, optional
+        Same degree used for calibration. Default is 3.
+    batch_size_epochs : int, optional
+        Same batch size used for calibration. Default is 30.
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with an additional 'veq' column.
+    """
+    # Align MoDip and geometry for batch solving
+    df_prep = _preprocessing(
+        df_calibrated, receiver_position=ctx.receiver_pos, h_ipp=ctx.h_ipp
+    )
+
+    veq_dict = _estimate_veq_batches(
+        df_prep, max_degree=max_polynomial_degree, batch_length_mins=batch_size_epochs
+    )
+
+    if not veq_dict:
+        return df_calibrated.with_columns(pl.lit(None).alias("veq"))
+
+    # Ensure schema consistency for join (e.g., UTC timezone)
+    epoch_dtype = df_calibrated.schema["epoch"]
+
+    veq_batches_df = pl.DataFrame(
+        {"epoch": list(veq_dict.keys()), "veq_raw": list(veq_dict.values())}
+    ).with_columns(pl.col("epoch").cast(epoch_dtype))
+
+    # Single-row timeline to prevent duplication during interpolation
+    unique_timeline = df_calibrated.select("epoch").unique().sort("epoch")
+
+    # Distribute zenithal value to all satellites per epoch
+    interp_values = (
+        unique_timeline.join(veq_batches_df, on="epoch", how="left")
+        .sort("epoch")
+        .with_columns(
+            pl.col("veq_raw")
+            .interpolate(method="linear")
+            .fill_null(strategy="forward")
+            .fill_null(strategy="backward")
+            .alias("veq")
+        )
+        .select(["epoch", "veq"])
+    )
+
+    return df_calibrated.join(interp_values, on="epoch", how="left")
