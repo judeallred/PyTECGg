@@ -2,6 +2,16 @@
 
 This stage transforms raw observations into high-quality, geometrically-referenced time series, determining exactly where the ionospheric observations took place.
 
+## Ephemeris Preparation 📐
+
+The first step is filtering global navigation messages and preparing ephemerides. Beyond preparing data for orbital propagation, this function enriches the `GNSSContext` with GLONASS `frequency_channels` (if `R` is among the requested constellations).
+
+```python
+from pytecgg.satellites import prepare_ephemeris
+
+ephem_dict = prepare_ephemeris(nav_dict, ctx=ctx)
+```
+
 ## Signal Processing 🔎
 
 Starting from the basic observables and given a `GNSSContext`, `PyTECGg` can compute the following [linear combinations](https://gssc.esa.int/navipedia/index.php/Combination_of_GNSS_Measurements), useful for removing biases or isolating physical effects:
@@ -46,10 +56,7 @@ Processing parameters and options:
 To locate the ionospheric samples, we must first compute the satellite positions in the Earth-Centered, Earth-Fixed (ECEF) frame.
 
 ```python
-from pytecgg.satellites import prepare_ephemeris, satellite_coordinates
-
-# Prepare ephemerides for the current context
-ephem_dict = prepare_ephemeris(nav_dict, ctx=ctx)
+from pytecgg.satellites import satellite_coordinates
 
 # Compute satellitess ECEF coordinates
 df_coords = satellite_coordinates(
@@ -62,7 +69,7 @@ df_coords = satellite_coordinates(
 df_geom = df_arcs.join(df_coords, on=["sv", "epoch"], how="left")
 ```
 
-The `prepare_ephemeris` function filters the global navigation messages to retain only those relevant to the satellites and time window defined in your `GNSSContext`. The resulting `satellite_coordinates` provide the `X`, `Y`, `Z` position of each satellite for every observed epoch.
+`satellite_coordinates` provides the `X`, `Y`, `Z` positions of each satellite for every observed epoch.
 
 ## Ionospheric Pierce Point (IPP) 📌
 
