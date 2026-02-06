@@ -11,7 +11,9 @@ exclude = [
   "rinex/*",
   "tests/*",
   ".github/*",
-  "images/*"
+  "docs/*",
+  "mkdocs.yml",
+  ".gitignore"
 ]
 
 [lib]
