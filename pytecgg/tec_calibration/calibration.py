@@ -386,16 +386,25 @@ def calculate_vertical_equivalent(
     # Ensure schema consistency for join (e.g., UTC timezone)
     epoch_dtype = df_calibrated.schema["epoch"]
 
-    veq_batches_df = pl.DataFrame(
-        {"epoch": list(veq_dict.keys()), "veq_raw": list(veq_dict.values())}
-    ).with_columns(pl.col("epoch").cast(epoch_dtype))
+    veq_batches_df = (
+        pl.DataFrame(
+            {"epoch": list(veq_dict.keys()), "veq_raw": list(veq_dict.values())}
+        )
+        .with_columns(pl.col("epoch").cast(epoch_dtype))
+        .sort("epoch")
+    )
 
     # Single-row timeline to prevent duplication during interpolation
     unique_timeline = df_calibrated.select("epoch").unique().sort("epoch")
 
     # Distribute zenithal value to all satellites per epoch
     interp_values = (
-        unique_timeline.join(veq_batches_df, on="epoch", how="left")
+        unique_timeline.join_asof(
+            veq_batches_df,
+            on="epoch",
+            strategy="nearest",
+            tolerance="1m",
+        )
         .sort("epoch")
         .with_columns(
             pl.col("veq_raw")
