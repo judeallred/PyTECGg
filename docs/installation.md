@@ -1,6 +1,6 @@
 # Installation
 
-PyTECGg features a performance-critical core written in Rust and a high-level API in Python. Pre-compiled binaries (wheels) for most common platforms are provided.
+`PyTECGg` features a performance-critical core written in Rust and a high-level API in Python. Pre-compiled binaries (wheels) for most common platforms are provided.
 
 ## 📦 From PyPI (recommended)
 

@@ -56,6 +56,9 @@ markdown_extensions:
       alternate_style: true
   - pymdownx.emoji
   - pymdownx.details
+  - pymdownx.snippets:
+      base_path: ["docs"]
+  - abbr
 
 plugins:
   - search
@@ -77,7 +80,7 @@ nav:
       - Data Ingestion & Setup: quickstart/0-data-ingestion-setup.md
       - Preprocessing & Geometry: quickstart/1-preprocessing-geometry.md
       - TEC Calibration: quickstart/2-tec-calibration.md
-      - Batch Calibration: quickstart/3-batch-calibration.md
+      - Batch Processing: quickstart/3-batch-processing.md
   - API Reference:
       - Parsing: reference/parsing.md
       - Context: reference/context.md

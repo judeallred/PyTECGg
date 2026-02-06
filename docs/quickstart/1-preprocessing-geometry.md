@@ -53,7 +53,7 @@ Processing parameters and options:
 
 ## Orbital Propagation 🌍
 
-To locate the ionospheric samples, we must first compute the satellite positions in the Earth-Centered, Earth-Fixed (ECEF) frame.
+To locate the ionospheric samples, we must first compute the satellite positions in the ECEF frame.
 
 ```python
 from pytecgg.satellites import satellite_coordinates
@@ -119,3 +119,6 @@ As an example, we may want to inspect arc metadata, like the unique identifier f
     | 00:00:00 | E05 | "bneu_e05_001" | 44.97 | 20.75 | 101.93 | 179.50 | 73.10 |
     | 00:00:00 | E16 | "bneu_e16_001" | 11.03 | 23.88 | 102.24 | 27.57 | 52.26 |
     | 00:00:00 | E25 | "bneu_e25_001" | 34.64 | 22.97 | 100.76 | 321.15 | 59.68 |
+
+
+--8<-- "includes/abbreviations.md"

@@ -1,6 +1,6 @@
 # Data Ingestion & Setup 🏗️
 
-The first step in any TEC analysis is loading the raw data and preparing the execution environment. `PyTECGg` uses a high-performance Rust backend to parse RINEX files, delivering data directly into a [Polars DataFrame](https://docs.pola.rs/api/python/stable/reference/dataframe/index.html) for maximum efficiency.
+The first step in any TEC analysis is loading the raw data and preparing the execution environment. `PyTECGg` uses a high-performance Rust backend to parse RINEX files, delivering data directly into a [Polars `DataFrame`](https://docs.pola.rs/api/python/stable/reference/dataframe/index.html) for maximum efficiency.
 
 ## Parse RINEX files — fast ⚡
 
@@ -137,3 +137,5 @@ Once data is loaded, you can use `summarise_rinex_data` to verify signal availab
     ```
 
     The RINEX files are saved under the provided `output_path`.
+
+--8<-- "includes/abbreviations.md"

@@ -92,3 +92,5 @@ The new columns represent:
 
 !!! tip "vTEC *vs* VEq"
     Unlike `vtec`, which shows different values for each satellite due to their different geographic IPP positions, `veq` provides a unique value per epoch, making it the ideal product for local ionospheric trend analysis.
+
+--8<-- "includes/abbreviations.md"
