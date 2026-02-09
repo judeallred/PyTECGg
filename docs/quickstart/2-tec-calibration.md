@@ -87,6 +87,10 @@ The new columns represent:
 - `vtec`: final vTEC, obtained by applying the mapping function to the sTEC.
 - `veq`: time series of the "equivalent" vertical TEC above the station (zenith).
 
+As shown below, while the scattered points represent **vTEC** at each satellite's IPP, the **VEq** solid line represents an estimation of the ionosphere directly above the station zenith. A good alignment of the different satellite tracks, which would otherwise be scattered at different vertical offsets, indicates that instrumental biases have been successfully estimated and removed.
+
+![TEC calibration](../images/tec_calibration.png)
+
 !!! tip "Absolute TEC"
     Unlike the relative geometry-free combination, vTEC provides the absolute electron content, making it directly comparable across different stations and satellites.
 

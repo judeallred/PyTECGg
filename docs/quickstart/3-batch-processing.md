@@ -76,6 +76,8 @@ df_cal = calculate_tec(df_geom, ctx=ctx)
 df_veq = calculate_vertical_equivalent(df_cal, ctx=ctx)
 ```
 
+## Wrapping up 🏁
+
 As shown in the plot below, while individual satellite tracks (blue dots) reflect specific ionospheric conditions at different IPPs, the **VEq** (solid black line) provides a continuous, stable estimation of the ionospheric electron content directly above the station zenith.
 
 ![Multi-day TEC analysis](../images/batch_processing.png)
