@@ -6,6 +6,8 @@
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/PyTECGg)
 ![Tests](https://github.com/viventriglia/PyTECGg/actions/workflows/pytest.yml/badge.svg)
 ![CI](https://github.com/viventriglia/pytecgg/actions/workflows/build_publish.yml/badge.svg)
+[![Gemini Gem](https://img.shields.io/badge/Gemini-PyTECGg-1a73e8?logo=googlegemini&logoColor=white)](https://gemini.google.com/share/TUA_GEM)
+
 
 <p align="left">
   <img src="docs/images/pytecgg_logo.svg" width="400" title="Logo PyTECGg">
@@ -41,6 +43,9 @@ This will also install all required Python dependencies automatically.
 ## Documentation
 
 Read the **documentation** [**here**](https://viventriglia.github.io/PyTECGg/).
+
+> [!TIP]
+> **In a hurry?** You can [**ask the PyTECGg AI assistant**](https://gemini.google.com/gem/1qc1bu6XL6UVUtrd1MLuCQVrnLI8_nU9_?usp=sharing) for instant help!
 
 ## Contributing
 

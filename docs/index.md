@@ -12,6 +12,9 @@
 <p align="center">
   <img src="https://github.com/viventriglia/PyTECGg/actions/workflows/pytest.yml/badge.svg" alt="Tests">
   <img src="https://github.com/viventriglia/pytecgg/actions/workflows/build_publish.yml/badge.svg" alt="CI">
+  <a href="https://gemini.google.com/share/TUA_GEM">
+    <img src="https://img.shields.io/badge/Gemini-PyTECGg-1a73e8?logo=googlegemini&logoColor=white" alt="Gemini Gem">
+  </a>
 </p>
 
 ---
@@ -20,7 +23,7 @@ Total Electron Content (**TEC**) reconstruction with **GNSS** data – a Python 
 
 ## What is PyTECGg?
 
-PyTECGg is a fast, lightweight Python package that helps **reconstruct and calibrate** the **[Total Electron Content](https://en.wikipedia.org/wiki/Total_electron_content)** (TEC) from **GNSS data**.
+`PyTECGg` is a fast, lightweight Python package that helps **reconstruct and calibrate** the **[Total Electron Content](https://en.wikipedia.org/wiki/Total_electron_content)** (TEC) from **GNSS data**.
 
 Why calibration matters? Because without it, you don’t actually know the true value of TEC — only how it changes. Uncalibrated TEC is affected by unknown biases from satellites and receivers, as well as other sources of error.
 
@@ -35,13 +38,15 @@ This package is designed for researchers and engineers who need speed and reliab
 - **Seamless decompression**: built-in support for Hatanaka-compressed files — no need to decompress your data manually.
 
 <!-- TODO -->
-<!-- !!! info "Citing PyTECGg"
-    If you use PyTECGg for your research, please cite ... -->
+<!-- !!! info "Citing `PyTECGg`"
+    If you use `PyTECGg` for your research, please cite ... -->
 
 ## Get started
 
-📥 [**Install**](installation.md)
+📥 [**Install** `PyTECGg`](installation.md)
 
-🚀 [**Quickstart**](quickstart/0-data-ingestion-setup.md)
+🚀 [**Quickstart** with an hands-on tutorial](quickstart/0-data-ingestion-setup.md)
 
-🌱 [**Contribute**](contributing.md)
+🤖 <a href="https://gemini.google.com/gem/1qc1bu6XL6UVUtrd1MLuCQVrnLI8_nU9_?usp=sharing" target="_blank">**Ask** the official <code>PyTECGg</code> AI assistant for help</a>
+
+🌱 [**Contribute** to the project](contributing.md)
