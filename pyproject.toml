@@ -25,6 +25,7 @@ plotly = "^6.0"
 mkdocs = "^1.6.1"
 mkdocs-material = "^9.7.0"
 mkdocstrings = {extras = ["python"], version = "^1.0.0"}
+matplotlib = "^3.10"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
