@@ -1,10 +1,10 @@
-from typing import Literal
+from typing import Literal, Optional
 from datetime import timedelta
 
 import polars as pl
 import numpy as np
 
-from .constants import FREQ_BANDS, C
+from .constants import FREQ_BANDS, C, PHASE_FREQ_PRIORITY
 
 
 def _infer_temporal_resolution(df: pl.DataFrame) -> timedelta:
@@ -18,6 +18,9 @@ def detect_cs_lol(
     threshold_std: float = 5.0,
     threshold_abs: float = 5.0,
     max_gap: timedelta = None,
+    glonass_freq: Optional[dict[str, int]] = None,
+    f1: Optional[float] = None,
+    f2: Optional[float] = None,
 ) -> pl.DataFrame:
     """
     Detect cycle slip (CS) and loss-of-lock (LoL) in GNSS observations using
@@ -30,6 +33,9 @@ def detect_cs_lol(
         threshold_abs (float): Absolute threshold in meters for CS detection (default: 5.0)
         max_gap (timedelta): Maximum allowed time gap between observations before declaring
             LoL (default: inferred from df's temporal resolution)
+        glonass_freq (dict[str, int], optional): Frequency mapping for GLONASS satellites
+        f1 (float or pl.Series, optional): Frequency of the first band (Hz)
+        f2 (float or pl.Series, optional): Frequency of the second band (Hz)
 
     Returns:
         pl.DataFrame: DataFrame with CS and LoL detections, containing:
@@ -43,15 +49,53 @@ def detect_cs_lol(
         combination, following the methodology described in:
         ESA Navipedia (https://gssc.esa.int/navipedia/index.php?title=Detector_based_in_code_and_carrier_phase_data:_The_Melbourne-W%C3%BCbbena_combination)
     """
-    lambda_w = C / (FREQ_BANDS[system]["L1"] - FREQ_BANDS[system]["L2"])
-    sigma_0 = lambda_w / 2
+    if system == "R":
+        if glonass_freq is None:
+            raise ValueError("glonass_freq is required for GLONASS processing")
+        valid_svs = [
+            sv
+            for sv in df.get_column("sv").unique()
+            if glonass_freq.get(sv) is not None
+        ]
+        if not valid_svs:
+            return pl.DataFrame()
+    else:
+        valid_svs = df.get_column("sv").unique()
+
     if max_gap is None:
         max_gap = _infer_temporal_resolution(df)
 
     result = []
 
-    for sv in df.get_column("sv").unique():
+    result_schema = {
+        "epoch": df.schema["epoch"],
+        "sv": df.schema["sv"],
+        "is_loss_of_lock": pl.Boolean,
+        "is_cycle_slip": pl.Boolean,
+    }
+
+    if system in ["G", "E", "C"]:
+        if f1 is None or f2 is None:
+            # Fallback to defaults from constants if frequencies are not provided
+            band2, band1 = PHASE_FREQ_PRIORITY[system][0]
+            f1 = FREQ_BANDS[system][band1]
+            f2 = FREQ_BANDS[system][band2]
+        lambda_w_const = C / (f1 - f2)
+        sigma_0_const = lambda_w_const / 2
+
+    for sv in valid_svs:
         df_sv = df.filter(pl.col("sv") == sv).sort("epoch")
+
+        if system == "R":
+            if sv not in glonass_freq:
+                raise ValueError(f"Missing GLONASS frequency number for {sv}")
+            n = glonass_freq[sv]
+            f1 = FREQ_BANDS["R"]["L1"](n)
+            f2 = FREQ_BANDS["R"]["L2"](n)
+            lambda_w = C / (f1 - f2)
+            sigma_0 = lambda_w / 2
+        else:
+            sigma_0 = sigma_0_const
 
         k = 0
         m_mw = None
@@ -138,4 +182,4 @@ def detect_cs_lol(
                 k += 1
                 m_prev = mw
 
-    return pl.DataFrame(result)
+    return pl.DataFrame(result, schema=result_schema)

@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TypedDict, Optional
 from dataclasses import dataclass
 
@@ -34,12 +34,12 @@ class GNSSConstants:
 
 class EphemerisFields(TypedDict):
     GPS: list[str]
-    BeiDou: list[str]
+    BEIDOU: list[str]
     GLONASS: list[str]
-    Galileo: list[str]
+    GALILEO: list[str]
     QZSS: list[str]
     SBAS: list[str]
-    NavIC: list[str]
+    NAVIC: list[str]
 
 
 EPHEMERIS_FIELDS: EphemerisFields = {
@@ -73,7 +73,7 @@ EPHEMERIS_FIELDS: EphemerisFields = {
         "tgd",
         "toe",
     ],
-    "BeiDou": [
+    "BEIDOU": [
         "clock_bias",
         "clock_drift",
         "clock_drift_rate",
@@ -115,7 +115,7 @@ EPHEMERIS_FIELDS: EphemerisFields = {
         "velY",
         "velZ",
     ],
-    "Galileo": [
+    "GALILEO": [
         "clock_bias",
         "clock_drift",
         "clock_drift_rate",
@@ -175,7 +175,7 @@ EPHEMERIS_FIELDS: EphemerisFields = {
         "week",
     ],
     "SBAS": [],
-    "NavIC": [],
+    "NAVIC": [],
 }
 
 CONSTELLATION_PARAMS = {
@@ -185,11 +185,11 @@ CONSTELLATION_PARAMS = {
         time_offset=timedelta(0),
         fields=EPHEMERIS_FIELDS["GPS"],
     ),
-    "BeiDou": ConstellationParams(
+    "BEIDOU": ConstellationParams(
         time_system="BDT",
         prefix="C",
         time_offset=timedelta(hours=8),
-        fields=EPHEMERIS_FIELDS["BeiDou"],
+        fields=EPHEMERIS_FIELDS["BEIDOU"],
     ),
     "GLONASS": ConstellationParams(
         time_system="UTC",
@@ -197,11 +197,11 @@ CONSTELLATION_PARAMS = {
         time_offset=timedelta(0),
         fields=EPHEMERIS_FIELDS["GLONASS"],
     ),
-    "Galileo": ConstellationParams(
+    "GALILEO": ConstellationParams(
         time_system="GST",
         prefix="E",
         time_offset=timedelta(0),
-        fields=EPHEMERIS_FIELDS["Galileo"],
+        fields=EPHEMERIS_FIELDS["GALILEO"],
     ),
     "QZSS": ConstellationParams(
         time_system="QZSST",
@@ -209,11 +209,11 @@ CONSTELLATION_PARAMS = {
         time_offset=timedelta(0),
         fields=EPHEMERIS_FIELDS["QZSS"],
     ),
-    "NavIC": ConstellationParams(
+    "NAVIC": ConstellationParams(
         time_system="IRNWT",
         prefix="I",
         time_offset=timedelta(0),
-        fields=EPHEMERIS_FIELDS["NavIC"],
+        fields=EPHEMERIS_FIELDS["NAVIC"],
     ),
     "SBAS": ConstellationParams(
         time_system="UTC",
@@ -231,26 +231,28 @@ GNSS_CONSTANTS: dict[str, GNSSConstants] = {
         e=0.0818191908426215,
         f=1 / 298.257223563,
     ),
-    "BeiDou": GNSSConstants(
+    "BEIDOU": GNSSConstants(
         gm=3.986004418e14, we=7.292115e-5, a=6378137, f=1 / 298.257222101
     ),
     "GLONASS": GNSSConstants(
         gm=3.9860044e14, we=7.292115e-5, a=6378136, c20=-1082.63e-6
     ),
-    "Galileo": GNSSConstants(gm=3.986004418e14, we=7.2921151467e-5, a=6378137),
+    "GALILEO": GNSSConstants(gm=3.986004418e14, we=7.2921151467e-5, a=6378137),
     "QZSS": GNSSConstants(
         gm=3.986005e14,
         we=7.2921151467e-5,
         a=6378137,
     ),
-    "NavIC": GNSSConstants(
+    "NAVIC": GNSSConstants(
         gm=3.986005e14,
         we=7.2921151467e-5,
         a=6378137,
     ),
 }
 
-TOL_KEPLER = 0.001
+GPS_EPOCH = datetime(1980, 1, 6, tzinfo=timezone.utc)
+
+TOL_KEPLER: float = 0.001
 
 # Earth radius in meters
 RE: float = 6371000.0

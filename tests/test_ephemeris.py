@@ -1,31 +1,47 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
+import pytest
 import polars as pl
 
+from pytecgg.context import GNSSContext
 from pytecgg.parsing import read_rinex_nav
-from pytecgg.satellites.ephemeris import _parse_time, prepare_ephemeris
+from pytecgg.satellites.ephemeris import _get_gps_time, prepare_ephemeris
 
 
-def test_parse_time():
-    time_str = "2024-01-01T12:00:00 GPST"
-    time_offset = timedelta(seconds=18)
-    dt = _parse_time(time_str, "GPST", time_offset)
-    assert dt == datetime(2024, 1, 1, 11, 59, 42, tzinfo=timezone.utc)
+def test_get_gps_time():
+    dt = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    gps_week, gps_seconds = _get_gps_time(dt)
+    assert gps_week == 2295
+    assert gps_seconds == 129600.0
+
+
+def test_get_gps_time_type_safety():
+    """
+    Verify that _get_gps_time raises TypeError when provided with an invalid type.
+    """
+    with pytest.raises(TypeError):
+        _get_gps_time(123456789)
 
 
 def test_prepare_ephemeris_nav_v3(nav_v3_file):
     nav_data = read_rinex_nav(nav_v3_file)
 
-    assert isinstance(nav_data, dict)
-    assert "GPS" in nav_data
-    assert isinstance(nav_data["GPS"], pl.DataFrame)
+    df_gps = nav_data.get("GPS")
+    assert df_gps is not None
+    assert isinstance(df_gps["epoch"].dtype, pl.Datetime)
 
-    ephemeris = prepare_ephemeris(nav_data, "GPS")
+    ctx = GNSSContext(
+        receiver_pos=(0.0, 0.0, 0.0),
+        receiver_name="TEST",
+        rinex_version="3.04",
+        systems=["G"],
+    )
 
+    ephemeris = prepare_ephemeris(nav_data, ctx)
     assert isinstance(ephemeris, dict)
-    assert len(ephemeris) > 0
+
     for sat, eph in ephemeris.items():
-        assert "gps_week" in eph
-        assert "gps_seconds" in eph
-        assert "sv" in eph
+        assert sat.startswith("G")
+        assert len(sat) == 3
+        assert eph["datetime"].tzinfo is not None
         assert eph["constellation"] == "GPS"

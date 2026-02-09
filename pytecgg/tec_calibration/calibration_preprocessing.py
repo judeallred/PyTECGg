@@ -126,4 +126,4 @@ def _preprocessing(
             pl.lit(modip_rec).alias("modip_rec"),
             pl.lit(lon_rec).alias("lon_rec"),
         ]
-    )
+    ).drop_nans()

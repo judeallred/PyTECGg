@@ -3,8 +3,11 @@ import datetime
 
 import pytest
 
+from pytecgg.parsing import read_rinex_obs
+from pytecgg.context import GNSSContext
 
-@pytest.fixture
+
+@pytest.fixture(scope="session")
 def test_data_dir():
     return Path(__file__).parent.parent / "rinex"
 
@@ -12,22 +15,22 @@ def test_data_dir():
 # Observation File Fixtures
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def obs_v2_file(test_data_dir):
     return str(test_data_dir / "v2" / "obs" / "cgtc0920.14o")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def obs_v3_file(test_data_dir):
     return str(test_data_dir / "v3" / "obs" / "ASIR00ITA_R_20242810000_01D_30S_MO.rnx")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def obs_v3_hatanaka_compressed_file(test_data_dir):
     return str(test_data_dir / "v3" / "obs" / "ASIR00ITA_R_20242810000_01D_30S_MO.crx")
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def obs_v3_gzip_file(test_data_dir):
     return str(
         test_data_dir / "v3" / "obs" / "ASIR00ITA_R_20242810000_01D_30S_MO.crx.gz"
@@ -37,12 +40,12 @@ def obs_v3_gzip_file(test_data_dir):
 # Navigation File Fixtures
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def nav_v3_file(test_data_dir):
     return str(test_data_dir / "v3" / "nav" / "BRDC00WRD_R_20250870000_01D_MN.rnx")
 
 
-# Other File Fixtures
+# Other Fixtures
 @pytest.fixture
 def invalid_file(tmp_path):
     return str(tmp_path / "nonexistent.obs")
@@ -72,3 +75,32 @@ def ephemeris_data():
             "datetime": dt,
         }
     }
+
+
+@pytest.fixture
+def rec_pos():
+    return (45.0, 9.0, 100.0)
+
+
+@pytest.fixture(scope="session")
+def parsed_rinex_obs_data(obs_v3_file):
+    """Parses a RINEX file."""
+    obs_data, rec_pos, rinex_version = read_rinex_obs(obs_v3_file)
+    rec_name = Path(obs_v3_file).stem[:4]
+    return {
+        "obs_data": obs_data,
+        "rec_pos": rec_pos,
+        "rinex_version": rinex_version,
+        "rec_name": rec_name,
+    }
+
+
+@pytest.fixture(scope="module")
+def real_context(parsed_rinex_obs_data):
+    """Creates a GNSSContext based on the real RINEX header data."""
+    return GNSSContext(
+        receiver_pos=parsed_rinex_obs_data["rec_pos"],
+        receiver_name=parsed_rinex_obs_data["rec_name"],
+        rinex_version=parsed_rinex_obs_data["rinex_version"],
+        systems=["G", "E", "C"],
+    )

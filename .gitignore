@@ -54,5 +54,7 @@ jupyters/
 scripts/
 
 # Markdown
-*.md
-!README.md
+/*.md
+!/README.md
+!/CODE_OF_CONDUCT.md
+!/CONTRIBUTING.md

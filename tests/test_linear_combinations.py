@@ -5,6 +5,7 @@ import polars as pl
 from pytecgg.linear_combinations.mw import _calculate_melbourne_wubbena
 from pytecgg.linear_combinations.gflc import _calculate_gflc_phase
 from pytecgg.linear_combinations.cs_lol_detection import detect_cs_lol
+from pytecgg.linear_combinations.lc_calculation import calculate_linear_combinations
 
 
 def test_mw_cycle_slip():
@@ -129,3 +130,31 @@ def test_detect_lol():
     lol_detections = result.filter(pl.col("is_loss_of_lock") == True)
     assert len(lol_detections) == 1
     assert lol_detections["epoch"][0] == datetime(2023, 1, 1, 0, 6, 0)
+
+
+def test_calculate_lc_with_real_file(parsed_rinex_obs_data, real_context):
+    """
+    Integration test: verifies linear combinations calculation using real RINEX data.
+    """
+    obs_df = parsed_rinex_obs_data["obs_data"]
+
+    df_lc = calculate_linear_combinations(
+        obs_df,
+        real_context,
+        combinations=["gflc_phase", "gflc_code", "iflc_phase", "iflc_code", "mw"],
+    )
+
+    assert not df_lc.is_empty()
+
+    expected_cols = {
+        "epoch",
+        "sv",
+        "gflc_phase",
+        "gflc_code",
+        "iflc_phase",
+        "iflc_code",
+        "mw",
+    }
+    assert set(df_lc.columns).issuperset(expected_cols)
+    assert len(real_context.freq_meta) == 3
+    assert "G" in real_context.freq_meta

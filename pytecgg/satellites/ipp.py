@@ -1,42 +1,47 @@
-from typing import Tuple
+from typing import Optional
 
 import numpy as np
+import polars as pl
 from pymap3d import ecef2geodetic, ecef2aer
 
 from .constants import RE
+from pytecgg.context import GNSSContext
 
 
 def calculate_ipp(
-    rec_ecef: Tuple[float, float, float],
-    sat_ecef_array: np.ndarray,
-    h_ipp: float = 350_000,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    df: pl.DataFrame,
+    ctx: GNSSContext,
+    min_elevation: Optional[float] = None,
+) -> pl.DataFrame:
     """
-    Calculate the Ionospheric Pierce Point (IPP) location.
+    Calculate the Ionospheric Pierce Point (IPP) coordinates and satellite geometry.
 
-    Parameters:
-    - rec_ecef: Receiver ECEF coordinates (x, y, z) in meters
-    - sat_ecef_array: (N,3) array of satellite ECEF coordinates in meters
-    - h_ipp: Mean height of the ionosphere shell in meters, default is 350.000 meters
+    Parameters
+    ----------
+    df : pl.DataFrame
+        DataFrame containing satellite ECEF coordinates ('sat_x', 'sat_y', 'sat_z').
+    ctx : GNSSContext
+        Context containing receiver position and IPP height.
+    min_elevation : float, optional
+        Minimum elevation angle in degrees. If provided, observations below
+        this threshold are filtered out.
 
-    Returns:
-    - Tuple of (N,) NumPy arrays containing:
-        - lat: Latitude of IPP in degrees (None, if calculation fails)
-        - lon: Longitude of IPP in degrees (None, if calculation fails)
-        - azi: Azimuth angle from receiver to satellite in degrees (None, if calculation fails)
-        - ele: Elevation angle from receiver to satellite in degrees (None, if calculation fails)
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with added columns: 'lat_ipp', 'lon_ipp', 'azi', 'ele'.
     """
-    if h_ipp < 0:
-        raise ValueError("h_ipp must be non-negative")
+    if df.is_empty():
+        return df
 
-    if sat_ecef_array.size == 0:
-        return np.array([]), np.array([]), np.array([]), np.array([])
-
-    xA, yA, zA = map(np.asarray, rec_ecef)
-    xB, yB, zB = sat_ecef_array[:, 0], sat_ecef_array[:, 1], sat_ecef_array[:, 2]
+    sat_ecef = df.select(["sat_x", "sat_y", "sat_z"]).to_numpy()
+    xA, yA, zA = ctx.receiver_pos
+    xB, yB, zB = sat_ecef[:, 0], sat_ecef[:, 1], sat_ecef[:, 2]
+    h_ipp = ctx.h_ipp
 
     dx, dy, dz = xB - xA, yB - yA, zB - zA
 
+    # Intersection segment-sphere (thin-shell approximation)
     a = dx**2 + dy**2 + dz**2
     b = 2 * (dx * xA + dy * yA + dz * zA)
     c = xA**2 + yA**2 + zA**2 - (RE + h_ipp) ** 2
@@ -44,55 +49,61 @@ def calculate_ipp(
     disc = b**2 - 4 * a * c
     mask = disc >= 0
 
-    # Init arrays with NaN
-    size_ = sat_ecef_array.shape[0]
+    size_ = sat_ecef.shape[0]
     lat_ipp = np.full(size_, np.nan, dtype=float)
     lon_ipp = np.full(size_, np.nan, dtype=float)
     azi = np.full(size_, np.nan, dtype=float)
     ele = np.full(size_, np.nan, dtype=float)
 
-    # If no valid solutions, return NaNs
-    if not np.any(mask):
-        return lat_ipp, lon_ipp, azi, ele
+    if np.any(mask):
+        sqrt_disc = np.sqrt(disc[mask])
+        denom = 2 * a[mask]
+        t1 = (-b[mask] + sqrt_disc) / denom
+        t2 = (-b[mask] - sqrt_disc) / denom
 
-    # Compute valid solutions
-    sqrt_disc = np.sqrt(disc[mask])
-    denom = 2 * a[mask]
+        # Choose valid t (0 <= t <= 1), preferring the smaller (closer) one
+        t1_valid = (t1 >= 0) & (t1 <= 1)
+        t2_valid = (t2 >= 0) & (t2 <= 1)
 
-    t1 = (-b[mask] + sqrt_disc) / denom
-    t2 = (-b[mask] - sqrt_disc) / denom
+        t = np.select(
+            [t1_valid & t2_valid, t1_valid, t2_valid],
+            [np.minimum(t1, t2), t1, t2],
+            default=np.nan,
+        )
 
-    # Choose valid t (0 <= t <= 1), preferring the smaller one
-    t1_valid = (0 <= t1) & (t1 <= 1)
-    t2_valid = (0 <= t2) & (t2 <= 1)
+        valid_mask = ~np.isnan(t)
+        if np.any(valid_mask):
+            idx_out = np.flatnonzero(mask)[valid_mask]
 
-    t = np.select(
-        [t1_valid & t2_valid, t1_valid, t2_valid],
-        [np.minimum(t1, t2), t1, t2],
-        default=np.nan,
+            x_ipp = xA + dx[mask][valid_mask] * t[valid_mask]
+            y_ipp = yA + dy[mask][valid_mask] * t[valid_mask]
+            z_ipp = zA + dz[mask][valid_mask] * t[valid_mask]
+
+            latv, lonv, _ = ecef2geodetic(x_ipp, y_ipp, z_ipp)
+            lat_ipp[idx_out] = latv
+            lon_ipp[idx_out] = lonv
+
+            rec_geodetic = ecef2geodetic(xA, yA, zA)
+            aziv, elev, _ = ecef2aer(
+                xB[mask][valid_mask],
+                yB[mask][valid_mask],
+                zB[mask][valid_mask],
+                *rec_geodetic,
+                deg=True,
+            )
+            azi[idx_out] = aziv
+            ele[idx_out] = elev
+
+    df_result = df.with_columns(
+        [
+            pl.Series("lat_ipp", lat_ipp),
+            pl.Series("lon_ipp", lon_ipp),
+            pl.Series("azi", azi),
+            pl.Series("ele", ele),
+        ]
     )
 
-    valid = ~np.isnan(t)
-    if not np.any(valid):
-        return lat_ipp, lon_ipp, azi, ele
+    if min_elevation is not None:
+        df_result = df_result.filter(pl.col("ele") >= min_elevation)
 
-    # Compute IPP coordinates
-    idx_out = np.flatnonzero(mask)[valid]
-    x_ipp = xA + dx[mask][valid] * t[valid]
-    y_ipp = yA + dy[mask][valid] * t[valid]
-    z_ipp = zA + dz[mask][valid] * t[valid]
-
-    # Convert to geodetic coordinates
-    latv, lonv, _ = ecef2geodetic(x_ipp, y_ipp, z_ipp)
-    lat_ipp[idx_out] = latv
-    lon_ipp[idx_out] = lonv
-
-    # Compute azimuth and elevation
-    rec_geodetic = ecef2geodetic(*rec_ecef)
-    aziv, elev, _ = ecef2aer(
-        xB[mask][valid], yB[mask][valid], zB[mask][valid], *rec_geodetic, deg=True
-    )
-    azi[idx_out] = aziv
-    ele[idx_out] = elev
-
-    return lat_ipp, lon_ipp, azi, ele
+    return df_result

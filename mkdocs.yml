@@ -1,0 +1,89 @@
+site_name: PyTECGg
+site_description: "TEC reconstruction and calibration with GNSS data"
+site_url: "https://viventriglia.github.io/PyTECGg/"
+repo_name: PyTECGg
+repo_url: https://github.com/viventriglia/PyTECGg
+copyright: 'Developed with 💙 by <a href="https://www.linkedin.com/in/vincenzoventriglia/" target="_blank" rel="noopener">Vincenzo Ventriglia</a> (<a href="https://roma2.ingv.it/" target="_blank" rel="noopener">INGV</a>) &copy; 2025 - 2026'
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/viventriglia/PyTECGg
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pytecgg/
+
+theme:
+  name: material
+  logo: ./images/favicon.ico
+  favicon: ./images/favicon.ico
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - navigation.sections
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.footer
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+    - search.suggest
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji
+  - pymdownx.details
+  - pymdownx.snippets:
+      base_path: ["docs"]
+  - abbr
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_root_heading: true
+            show_source: false
+            docstring_style: numpy
+          paths:
+            - "."
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Contributing: contributing.md
+  - Quickstart:
+      - Data Ingestion & Setup: quickstart/0-data-ingestion-setup.md
+      - Preprocessing & Geometry: quickstart/1-preprocessing-geometry.md
+      - TEC Calibration: quickstart/2-tec-calibration.md
+      - Batch Processing: quickstart/3-batch-processing.md
+  - API Reference:
+      - Parsing: reference/parsing.md
+      - Context: reference/context.md
+      - Satellites & Geometry: reference/satellites.md
+      - TEC Calibration: reference/tec_calibration.md
+      - RINEX Utilities: reference/utils.md
