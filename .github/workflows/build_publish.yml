@@ -92,6 +92,25 @@ jobs:
           name: wheels-${{ matrix.os }}-${{ matrix.python }}
           path: ./wheelhouse/*.whl
 
+  build_wheels_win_arm64:
+    needs: check_pypi
+    name: Build wheels on Windows ARM64
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels (Windows ARM64)
+        uses: PyO3/maturin-action@v1
+        with:
+          target: aarch64-pc-windows-msvc
+          args: --release --out wheelhouse -i 3.11 -i 3.12 -i 3.13
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-arm64
+          path: ./wheelhouse/*.whl
+
   build_sdist:
     needs: check_pypi
     name: Build source distribution (sdist)
@@ -117,7 +136,7 @@ jobs:
 
   publish_pypi:
     name: Upload release to PyPI
-    needs: [build_wheels, build_sdist]
+    needs: [build_wheels, build_wheels_win_arm64, build_sdist]
     runs-on: ubuntu-latest
     environment:
       name: release
