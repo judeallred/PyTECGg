@@ -1,0 +1,50 @@
+name: Test Windows ARM64 Build
+
+on:
+  workflow_dispatch:  # Manual trigger
+  pull_request:
+    paths:
+      - '.github/workflows/test_win_arm64.yml'
+      - '.github/workflows/build_publish.yml'
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+jobs:
+  build_win_arm64:
+    name: Test Windows ARM64 wheel build
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels (Windows ARM64)
+        uses: PyO3/maturin-action@v1
+        with:
+          target: aarch64-pc-windows-msvc
+          args: --release --out wheelhouse -i 3.12
+
+      - name: Verify wheel was created
+        shell: pwsh
+        run: |
+          $wheels = Get-ChildItem -Path wheelhouse -Filter "*.whl"
+          if ($wheels.Count -eq 0) {
+            Write-Error "No wheels were created!"
+            exit 1
+          }
+          Write-Host "✅ Successfully built wheels:"
+          $wheels | ForEach-Object { Write-Host "  - $($_.Name)" }
+          
+          # Verify it's actually an ARM64 wheel
+          $arm64Wheel = $wheels | Where-Object { $_.Name -match "win_arm64" }
+          if (-not $arm64Wheel) {
+            Write-Error "No ARM64 wheel found!"
+            exit 1
+          }
+          Write-Host "✅ ARM64 wheel verified: $($arm64Wheel.Name)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-wheel-windows-arm64
+          path: ./wheelhouse/*.whl
+          retention-days: 7
